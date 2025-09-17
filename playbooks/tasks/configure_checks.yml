@@ -43,6 +43,42 @@
     mode: '0644'
   when: datadog_checks_merged.system is defined
 
+- name: Configure nginx check template
+  template:
+    src: "nginx_check.yaml.j2"
+    dest: "/etc/datadog-agent/conf.d/nginx.d/nginx.yaml"
+    owner: dd-agent
+    group: dd-agent
+    mode: '0644'
+  when: datadog_checks_merged.nginx is defined
+
+- name: Configure mysql check template
+  template:
+    src: "mysql_check.yaml.j2"
+    dest: "/etc/datadog-agent/conf.d/mysql.d/mysql.yaml"
+    owner: dd-agent
+    group: dd-agent
+    mode: '0644'
+  when: datadog_checks_merged.mysql is defined
+
+- name: Configure postgres check template
+  template:
+    src: "postgres_check.yaml.j2"
+    dest: "/etc/datadog-agent/conf.d/postgres.d/postgres.yaml"
+    owner: dd-agent
+    group: dd-agent
+    mode: '0644'
+  when: datadog_checks_merged.postgres is defined
+
+- name: Configure apache check template
+  template:
+    src: "apache_check.yaml.j2"
+    dest: "/etc/datadog-agent/conf.d/apache.d/apache.yaml"
+    owner: dd-agent
+    group: dd-agent
+    mode: '0644'
+  when: datadog_checks_merged.apache is defined
+
 - name: Restart agent to load new checks
   systemd:
     name: datadog-agent

@@ -238,13 +238,28 @@
     that:
       - ansible_os_family is defined
       - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Windows']
+      - ansible_distribution is defined
     fail_msg: |
       Unsupported operating system:
       - OS Family: {{ ansible_os_family | default('Unknown') }}
-      - Supported OS: RedHat, Debian, Suse, Windows
+      - Distribution: {{ ansible_distribution | default('Unknown') }}
+      - Supported OS: RedHat, Debian, Suse, Windows, Amazon, Oracle
       
       Please ensure your operating system is supported or add support for it.
     success_msg: "Operating system support validation passed"
+
+- name: Validate specific OS distributions
+  assert:
+    that:
+      - (ansible_distribution != "Amazon") or (ansible_os_family == "RedHat")
+      - (ansible_distribution != "Oracle") or (ansible_os_family == "RedHat")
+    fail_msg: |
+      Invalid OS distribution configuration:
+      - OS Family: {{ ansible_os_family }}
+      - Distribution: {{ ansible_distribution }}
+      - Amazon Linux should have os_family: RedHat
+      - Oracle Linux should have os_family: RedHat
+    success_msg: "OS distribution validation passed"
 
 - name: Log validation summary
   debug:

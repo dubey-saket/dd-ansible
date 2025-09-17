@@ -1,6 +1,6 @@
 ---
 # Linux specific installation tasks
-- name: Add DataDog repository (RedHat)
+- name: Add DataDog repository (RedHat/CentOS/Oracle Linux)
   yum_repository:
     name: datadog
     description: DataDog Agent Repository
@@ -8,6 +8,15 @@
     gpgcheck: true
     gpgkey: "https://keys.datadoghq.com/DATADOG_RPM_KEY_CURRENT.public"
   when: ansible_os_family == "RedHat"
+
+- name: Add DataDog repository (Amazon Linux)
+  yum_repository:
+    name: datadog
+    description: DataDog Agent Repository
+    baseurl: "https://yum.datadoghq.com/stable/{{ datadog_agent_major_version }}/x86_64/"
+    gpgcheck: true
+    gpgkey: "https://keys.datadoghq.com/DATADOG_RPM_KEY_CURRENT.public"
+  when: ansible_distribution == "Amazon"
 
 - name: Add DataDog repository (Debian)
   apt_repository:
@@ -24,11 +33,17 @@
     state: present
   when: ansible_os_family == "Suse"
 
-- name: Install DataDog agent (RedHat)
+- name: Install DataDog agent (RedHat/CentOS/Oracle Linux)
   yum:
     name: "datadog-agent-{{ datadog_agent_version }}-1.x86_64"
     state: present
   when: ansible_os_family == "RedHat"
+
+- name: Install DataDog agent (Amazon Linux)
+  yum:
+    name: "datadog-agent-{{ datadog_agent_version }}-1.x86_64"
+    state: present
+  when: ansible_distribution == "Amazon"
 
 - name: Install DataDog agent (Debian)
   apt:
@@ -43,7 +58,7 @@
     state: present
   when: ansible_os_family == "Suse"
 
-- name: Configure firewall rules (RedHat/CentOS)
+- name: Configure firewall rules (RedHat/CentOS/Oracle Linux)
   firewalld:
     port: "{{ item.port }}/{{ item.protocol }}"
     permanent: true
@@ -51,6 +66,16 @@
     immediate: true
   loop: "{{ firewall_rules | default([]) }}"
   when: ansible_os_family == "RedHat"
+
+- name: Configure firewall rules (Amazon Linux)
+  iptables:
+    chain: INPUT
+    protocol: "{{ item.protocol }}"
+    destination_port: "{{ item.port }}"
+    jump: ACCEPT
+    comment: "{{ item.comment }}"
+  loop: "{{ firewall_rules | default([]) }}"
+  when: ansible_distribution == "Amazon"
 
 - name: Configure firewall rules (Debian/Ubuntu)
   ufw:

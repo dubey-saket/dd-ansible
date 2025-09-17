@@ -1,0 +1,47 @@
+---
+# Amazon Linux specific configuration
+datadog_config_amazon:
+  # Amazon Linux specific paths
+  conf_path: "/etc/datadog-agent"
+  log_path: "/var/log/datadog-agent"
+  run_path: "/opt/datadog-agent/run"
+  
+  # Service management
+  service_name: "datadog-agent"
+  service_user: "dd-agent"
+  service_group: "dd-agent"
+
+# Amazon Linux specific checks
+datadog_checks_amazon:
+  systemd:
+    init_config:
+    instances:
+      - unit_names:
+          - datadog-agent.service
+        pattern: "datadog-agent"
+  yum:
+    init_config:
+    instances:
+      - collect_installed_packages: true
+        collect_installed_packages_interval: 3600
+  ec2:
+    init_config:
+    instances:
+      - tags:
+          - "env:{{ target_environment }}"
+          - "os:amazon"
+
+# Package management (Amazon Linux uses yum like RedHat)
+package_manager: "yum"
+datadog_repo_url: "https://yum.datadoghq.com/stable/7/x86_64/"
+
+# Firewall rules (Amazon Linux uses iptables/security groups)
+firewall_rules:
+  - port: 8126
+    protocol: tcp
+    state: present
+    comment: "DataDog APM"
+
+# Amazon Linux specific variables
+amazon_linux_version: "{{ ansible_distribution_version }}"
+ec2_metadata_enabled: true

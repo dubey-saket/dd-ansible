@@ -8,16 +8,18 @@ A modern, scalable, and production-ready Ansible playbook for deploying DataDog 
 - **Batch Processing**: Configurable batch sizes (25% default, 10% for production)
 - **Serial Execution**: Safe deployment across 300+ servers
 - **Failure Thresholds**: Prevent cascading failures with configurable limits
-- **Multi-OS Support**: RedHat, Debian, SUSE Linux, and **Windows** distributions
+- **Multi-OS Support**: RedHat, CentOS, Oracle Linux, Amazon Linux, Debian, Ubuntu, SUSE, openSUSE, and **Windows** distributions
 - **Cross-Platform Compatibility**: Full Windows and Linux support with OS-specific configurations
+- **Comprehensive OS Coverage**: Support for 10 different operating systems with automatic detection
 
 ### Environment Management
 - **Environment-Specific Configurations**: Separate configs for dev, staging, and production
 - **Hierarchical Configuration**: Base → OS → Environment → Application → Group → Host inheritance
-- **Template-Based Checks**: Maintainable configuration templates
+- **Template-Based Checks**: 8 comprehensive monitoring templates with extensible system
 - **Vault Encryption**: Secure storage of sensitive data
 - **Application Detection**: Automatic detection and configuration of application servers
 - **OS-Based Defaults**: Automatic configuration generation based on operating system
+- **Template System**: Flexible Jinja2 templates for dynamic DataDog configuration generation
 
 ### Monitoring & Logging
 - **Webhook Notifications**: Teams integration with deployment status updates
