@@ -1,0 +1,100 @@
+---
+# Install previous version tasks
+- name: Set previous version
+  set_fact:
+    previous_version: "{{ target_version | default('7.69.0') }}"
+
+- name: Add DataDog repository
+  block:
+    - name: Add DataDog repository (RedHat)
+      yum_repository:
+        name: datadog
+        description: DataDog Agent Repository
+        baseurl: "https://yum.datadoghq.com/stable/{{ datadog_agent_major_version }}/x86_64/"
+        gpgcheck: true
+        gpgkey: "https://keys.datadoghq.com/DATADOG_RPM_KEY_CURRENT.public"
+      when: ansible_os_family == "RedHat"
+
+    - name: Add DataDog repository (Debian)
+      apt_repository:
+        repo: "deb https://apt.datadoghq.com/ stable {{ datadog_agent_major_version }}"
+        state: present
+        update_cache: true
+        filename: datadog
+      when: ansible_os_family == "Debian"
+
+    - name: Add DataDog repository (SUSE)
+      zypper_repository:
+        name: datadog
+        repo: "https://yum.datadoghq.com/suse/stable/{{ datadog_agent_major_version }}/x86_64/"
+        state: present
+      when: ansible_os_family == "Suse"
+
+- name: Install specific version
+  block:
+    - name: Install specific DataDog agent version (RedHat)
+      yum:
+        name: "datadog-agent-{{ previous_version }}-1.x86_64"
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Install specific DataDog agent version (Debian)
+      apt:
+        name: "datadog-agent={{ previous_version }}-1"
+        state: present
+        update_cache: true
+      when: ansible_os_family == "Debian"
+
+    - name: Install specific DataDog agent version (SUSE)
+      zypper:
+        name: "datadog-agent-{{ previous_version }}-1.x86_64"
+        state: present
+      when: ansible_os_family == "Suse"
+
+- name: Verify installation
+  block:
+    - name: Check agent version
+      command: "datadog-agent version"
+      register: version_check
+      failed_when: false
+      changed_when: false
+
+    - name: Verify version matches target
+      assert:
+        that:
+          - previous_version in version_check.stdout
+        fail_msg: "Installed version does not match target version {{ previous_version }}"
+        success_msg: "Successfully installed DataDog agent version {{ previous_version }}"
+
+- name: Configure agent
+  block:
+    - name: Set API key
+      lineinfile:
+        path: /etc/datadog-agent/datadog.yaml
+        regexp: '^api_key:'
+        line: "api_key: {{ vault_datadog_api_key }}"
+        state: present
+        create: false
+
+    - name: Set site
+      lineinfile:
+        path: /etc/datadog-agent/datadog.yaml
+        regexp: '^site:'
+        line: "site: {{ datadog_site | default('datadoghq.com') }}"
+        state: present
+        create: false
+
+    - name: Set tags
+      lineinfile:
+        path: /etc/datadog-agent/datadog.yaml
+        regexp: '^tags:'
+        line: "tags: {{ datadog_global_tags + datadog_env_tags + (datadog_host_tags | default([])) | join(',') }}"
+        state: present
+        create: false
+
+- name: Set proper ownership
+  file:
+    path: /etc/datadog-agent
+    owner: dd-agent
+    group: dd-agent
+    recurse: true

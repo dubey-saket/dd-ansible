@@ -1,0 +1,260 @@
+---
+# Enhanced validation tasks with comprehensive input validation and error handling
+- name: Validate required variables with detailed error messages
+  assert:
+    that:
+      - vault_datadog_api_key is defined
+      - target_environment is defined
+      - datadog_site is defined
+    fail_msg: |
+      Required variables are missing:
+      - vault_datadog_api_key: {{ 'DEFINED' if vault_datadog_api_key is defined else 'MISSING' }}
+      - target_environment: {{ 'DEFINED' if target_environment is defined else 'MISSING' }}
+      - datadog_site: {{ 'DEFINED' if datadog_site is defined else 'MISSING' }}
+      
+      Please check:
+      1. Vault files are properly encrypted and contain required variables
+      2. Environment configuration files are present
+      3. All required variables are defined in the correct scope
+    success_msg: "Required variables validation passed"
+
+- name: Validate DataDog API key format
+  assert:
+    that:
+      - vault_datadog_api_key is string
+      - vault_datadog_api_key | length >= 32
+      - vault_datadog_api_key | length <= 64
+      - vault_datadog_api_key is match('^[a-fA-F0-9]+$')
+    fail_msg: |
+      Invalid DataDog API key format:
+      - Must be a string
+      - Must be between 32-64 characters
+      - Must contain only hexadecimal characters (0-9, a-f, A-F)
+      - Current value: {{ vault_datadog_api_key[:8] }}... (length: {{ vault_datadog_api_key | length }})
+    success_msg: "DataDog API key format validation passed"
+
+- name: Validate environment configuration
+  assert:
+    that:
+      - target_environment is string
+      - target_environment in ['dev', 'staging', 'prod']
+      - target_environment | length >= 2
+    fail_msg: |
+      Invalid target_environment:
+      - Must be a string
+      - Must be one of: dev, staging, prod
+      - Current value: {{ target_environment }}
+    success_msg: "Environment validation passed"
+
+- name: Validate DataDog site configuration
+  assert:
+    that:
+      - datadog_site is string
+      - datadog_site | length >= 3
+      - datadog_site is match('^[a-zA-Z0-9.-]+$')
+    fail_msg: |
+      Invalid DataDog site configuration:
+      - Must be a string
+      - Must be at least 3 characters
+      - Must contain only alphanumeric characters, dots, and hyphens
+      - Current value: {{ datadog_site }}
+    success_msg: "DataDog site validation passed"
+
+- name: Validate batch size format with detailed checks
+  assert:
+    that:
+      - batch_size is defined
+      - batch_size is string
+      - batch_size is match('^(\d+%|\d+)$')
+      - batch_size | length >= 1
+      - batch_size | length <= 10
+  fail_msg: |
+    Invalid batch_size format:
+    - Must be defined
+    - Must be a string
+    - Must match pattern: number (e.g., '10') or percentage (e.g., '25%')
+    - Must be 1-10 characters long
+    - Current value: {{ batch_size }}
+    
+    Valid examples: '10', '25%', '5%', '50'
+  success_msg: "Batch size validation passed"
+
+- name: Validate max fail percentage
+  assert:
+    that:
+      - max_fail_percentage is defined
+      - max_fail_percentage is number
+      - max_fail_percentage >= 0
+      - max_fail_percentage <= 100
+    fail_msg: |
+      Invalid max_fail_percentage:
+      - Must be defined
+      - Must be a number
+      - Must be between 0-100 (percentage)
+      - Current value: {{ max_fail_percentage }}
+    success_msg: "Max fail percentage validation passed"
+
+- name: Validate webhook URL format (if provided)
+  assert:
+    that:
+      - vault_webhook_url is defined
+      - vault_webhook_url is string
+      - vault_webhook_url | length >= 10
+      - vault_webhook_url is match('^https?://.*')
+    fail_msg: |
+      Invalid webhook URL format:
+      - Must be defined if webhook notifications are enabled
+      - Must be a string
+      - Must be at least 10 characters
+      - Must start with http:// or https://
+      - Current value: {{ vault_webhook_url[:50] }}...
+    success_msg: "Webhook URL validation passed"
+  when: 
+    - monitoring.webhook_enabled | default(false)
+    - vault_webhook_url is defined
+
+- name: Check system requirements with detailed validation
+  block:
+    - name: Check available disk space (Linux)
+      stat:
+        path: "/"
+      register: root_fs
+      when: ansible_os_family != "Windows"
+
+    - name: Check available disk space (Windows)
+      win_stat:
+        path: "C:\\"
+      register: root_fs
+      when: ansible_os_family == "Windows"
+    
+    - name: Validate minimum disk space (Linux)
+      assert:
+        that:
+          - root_fs.stat.size_available is defined
+          - root_fs.stat.size_available > 1073741824  # 1GB in bytes
+        fail_msg: |
+          Insufficient disk space:
+          - Required: 1GB free space
+          - Available: {{ (root_fs.stat.size_available / 1024 / 1024 / 1024) | round(2) }}GB
+          - Path: {{ root_fs.stat.path }}
+      when: ansible_os_family != "Windows"
+
+    - name: Validate minimum disk space (Windows)
+      assert:
+        that:
+          - root_fs.size_available is defined
+          - root_fs.size_available > 1073741824  # 1GB in bytes
+        fail_msg: |
+          Insufficient disk space:
+          - Required: 1GB free space
+          - Available: {{ (root_fs.size_available / 1024 / 1024 / 1024) | round(2) }}GB
+          - Path: {{ root_fs.path }}
+      when: ansible_os_family == "Windows"
+
+- name: Validate network connectivity with comprehensive checks
+  block:
+    - name: Test DNS resolution
+      command: "nslookup {{ datadog_site | default('datadoghq.com') }}"
+      register: dns_test
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family != "Windows"
+
+    - name: Test DNS resolution (Windows)
+      win_command: "nslookup {{ datadog_site | default('datadoghq.com') }}"
+      register: dns_test
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family == "Windows"
+    
+    - name: Validate DNS resolution result
+      assert:
+        that:
+          - dns_test.rc == 0
+          - dns_test.stdout is defined
+          - dns_test.stdout != ""
+        fail_msg: |
+          DNS resolution failed:
+          - Target: {{ datadog_site | default('datadoghq.com') }}
+          - Exit code: {{ dns_test.rc }}
+          - Output: {{ dns_test.stdout | default('No output') }}
+          - Error: {{ dns_test.stderr | default('No error message') }}
+          
+          Please check:
+          1. Network connectivity
+          2. DNS server configuration
+          3. Firewall settings
+        success_msg: "DNS resolution successful for {{ datadog_site | default('datadoghq.com') }}"
+
+    - name: Test HTTP connectivity to DataDog
+      uri:
+        url: "https://{{ datadog_site | default('datadoghq.com') }}"
+        method: GET
+        timeout: 10
+        status_code: [200, 301, 302, 403, 404]
+      register: http_test
+      failed_when: false
+      changed_when: false
+    
+    - name: Validate HTTP connectivity
+      assert:
+        that:
+          - http_test.status is defined
+          - http_test.status >= 200
+          - http_test.status < 500
+        fail_msg: |
+          HTTP connectivity test failed:
+          - URL: https://{{ datadog_site | default('datadoghq.com') }}
+          - Status code: {{ http_test.status | default('Unknown') }}
+          - Response time: {{ http_test.elapsed | default('Unknown') }}s
+          
+          Please check:
+          1. Internet connectivity
+          2. Firewall settings
+          3. Proxy configuration
+        success_msg: "HTTP connectivity to DataDog successful"
+
+- name: Validate agent version format
+  assert:
+    that:
+      - datadog_agent_version is defined
+      - datadog_agent_version is string
+      - datadog_agent_version is match('^\d+\.\d+\.\d+$')
+      - datadog_agent_major_version is defined
+      - datadog_agent_major_version is number
+      - datadog_agent_major_version >= 6
+      - datadog_agent_major_version <= 8
+    fail_msg: |
+      Invalid DataDog agent version:
+      - Must be defined
+      - Must be a string in format X.Y.Z (e.g., 7.70.1)
+      - Major version must be between 6-8
+      - Current version: {{ datadog_agent_version }}
+      - Current major version: {{ datadog_agent_major_version }}
+    success_msg: "DataDog agent version validation passed"
+
+- name: Validate operating system support
+  assert:
+    that:
+      - ansible_os_family is defined
+      - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Windows']
+    fail_msg: |
+      Unsupported operating system:
+      - OS Family: {{ ansible_os_family | default('Unknown') }}
+      - Supported OS: RedHat, Debian, Suse, Windows
+      
+      Please ensure your operating system is supported or add support for it.
+    success_msg: "Operating system support validation passed"
+
+- name: Log validation summary
+  debug:
+    msg:
+      - "=== VALIDATION SUMMARY ==="
+      - "Environment: {{ target_environment }}"
+      - "OS Family: {{ ansible_os_family }}"
+      - "DataDog Site: {{ datadog_site | default('datadoghq.com') }}"
+      - "Agent Version: {{ datadog_agent_version }}"
+      - "Batch Size: {{ batch_size | default('25%') }}"
+      - "Max Fail %: {{ max_fail_percentage | default(10) }}%"
+      - "Webhook Enabled: {{ monitoring.webhook_enabled | default(false) }}"
+      - "All validations passed successfully"

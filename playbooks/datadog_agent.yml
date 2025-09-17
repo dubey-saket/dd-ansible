@@ -1,0 +1,106 @@
+---
+- name: Deploy DataDog Agent with Modern Configuration Management
+  hosts: all
+  gather_facts: true
+  become: true
+  serial: "{{ batch_size | default('25%') }}"
+  max_fail_percentage: "{{ max_fail_percentage | default(10) }}"
+  
+  vars_files:
+    - ../vars/base.yml
+    - ../vars/{{ ansible_os_family | lower }}.yml
+    - ../vars/environments/{{ target_environment | default('dev') }}.yml
+    - ../vault/{{ target_environment | default('dev') }}.yml
+
+  pre_tasks:
+    - name: Enhanced validation and error handling
+      include_tasks: tasks/enhanced_validation.yml
+      tags: [validation, always]
+
+    - name: Merge configurations
+      include_tasks: tasks/merge_configurations.yml
+      tags: [configuration, always]
+
+    - name: Pre-deployment health check
+      include_tasks: tasks/health_check.yml
+      tags: [health_check, always]
+
+    - name: Send deployment start notification
+      include_tasks: tasks/enhanced_notifications.yml
+      vars:
+        notification_type: start
+      tags: [notifications, always]
+
+  tasks:
+    - name: Detect applications and generate configurations
+      include_tasks: tasks/application_detection.yml
+      tags: [application_detection, always]
+
+    - name: Install DataDog agent on Linux
+      include_tasks: tasks/linux_installation.yml
+      when: 
+        - not (skip_datadog_install | default(false))
+        - ansible_os_family != "Windows"
+      tags: [datadog_agent, linux]
+
+    - name: Install DataDog agent on Windows
+      include_tasks: tasks/windows_installation.yml
+      when: 
+        - not (skip_datadog_install | default(false))
+        - ansible_os_family == "Windows"
+      tags: [datadog_agent, windows]
+
+    - name: Configure DataDog agent
+      include_tasks: tasks/configure_checks.yml
+      tags: [datadog_configuration]
+
+    - name: Manage state tracking
+      include_tasks: tasks/state_management.yml
+      tags: [state_management]
+
+    - name: Cleanup orphaned checks
+      include_tasks: tasks/cleanup_management.yml
+      tags: [cleanup_management]
+
+  post_tasks:
+    - name: Verify DataDog agent installation
+      include_tasks: tasks/verify_installation.yml
+      tags: [verification, always]
+
+    - name: Configure custom checks
+      include_tasks: tasks/configure_checks.yml
+      tags: [custom_checks]
+
+    - name: Post-deployment health check
+      include_tasks: tasks/health_check.yml
+      vars:
+        check_type: post_deployment
+      tags: [health_check, always]
+
+    - name: Send deployment completion notification
+      include_tasks: tasks/enhanced_notifications.yml
+      vars:
+        notification_type: completion
+      when: not ansible_skip_tags or 'notifications' not in ansible_skip_tags
+      tags: [notifications, always]
+
+    - name: Generate deployment report
+      include_tasks: tasks/generate_report.yml
+      tags: [reporting, always]
+
+  rescue:
+    - name: Handle deployment failures
+      include_tasks: tasks/error_handling.yml
+      tags: [error_handling, always]
+
+    - name: Send failure notification
+      include_tasks: tasks/enhanced_notifications.yml
+      vars:
+        notification_type: failure
+      tags: [notifications, always]
+
+    - name: Generate failure report
+      include_tasks: tasks/generate_report.yml
+      vars:
+        report_type: failure
+      tags: [reporting, always]

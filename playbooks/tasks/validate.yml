@@ -1,0 +1,52 @@
+---
+# Validation tasks
+- name: Validate required variables
+  assert:
+    that:
+      - vault_datadog_api_key is defined
+      - target_environment is defined
+      - datadog_site is defined
+    fail_msg: "Required variables are missing. Check vault files and environment configuration."
+    success_msg: "Required variables validation passed"
+
+- name: Validate environment configuration
+  assert:
+    that:
+      - target_environment in ['dev', 'staging', 'prod']
+    fail_msg: "Invalid target_environment. Must be dev, staging, or prod"
+    success_msg: "Environment validation passed"
+
+- name: Validate batch size format
+  assert:
+    that:
+      - batch_size is match('^(\d+%|\d+)$')
+    fail_msg: "Invalid batch_size format. Use percentage (e.g., '25%') or number (e.g., '10')"
+    success_msg: "Batch size validation passed"
+
+- name: Check system requirements
+  block:
+    - name: Check available disk space
+      stat:
+        path: "/"
+      register: root_fs
+    
+    - name: Ensure minimum disk space available
+      assert:
+        that:
+          - root_fs.stat.size_available > 1073741824  # 1GB in bytes
+        fail_msg: "Insufficient disk space. Need at least 1GB free space"
+
+- name: Validate network connectivity
+  block:
+    - name: Test DNS resolution
+      command: "nslookup {{ datadog_site | default('datadoghq.com') }}"
+      register: dns_test
+      failed_when: false
+      changed_when: false
+    
+    - name: Check DNS resolution result
+      assert:
+        that:
+          - dns_test.rc == 0
+        fail_msg: "DNS resolution failed for {{ datadog_site | default('datadoghq.com') }}"
+        success_msg: "DNS resolution successful"

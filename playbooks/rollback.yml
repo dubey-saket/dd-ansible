@@ -1,0 +1,161 @@
+---
+- name: Rollback DataDog Agent
+  hosts: all
+  gather_facts: true
+  become: true
+  serial: "{{ batch_size | default('25%') }}"
+  max_fail_percentage: "{{ max_fail_percentage | default(10) }}"
+  
+  vars_files:
+    - ../vars/base.yml
+    - ../vars/{{ ansible_os_family | lower }}.yml
+    - ../vars/environments/{{ target_environment | default('dev') }}.yml
+    - ../vault/{{ target_environment | default('dev') }}.yml
+
+  pre_tasks:
+    - name: Validate rollback configuration
+      assert:
+        that:
+          - rollback_version is defined
+          - vault_datadog_api_key is defined
+        fail_msg: "Required rollback variables are missing"
+
+    - name: Send rollback start notification
+      include_tasks: tasks/notifications.yml
+      vars:
+        notification_type: rollback_start
+      tags: [notifications, always]
+
+  tasks:
+    - name: Stop DataDog agent service (Linux)
+      systemd:
+        name: datadog-agent
+        state: stopped
+      register: agent_stop_result
+      failed_when: false
+      when: ansible_os_family != "Windows"
+
+    - name: Stop DataDog agent service (Windows)
+      win_service:
+        name: DatadogAgent
+        state: stopped
+      register: agent_stop_result
+      failed_when: false
+      when: ansible_os_family == "Windows"
+
+    - name: Backup current configuration
+      archive:
+        path:
+          - /etc/datadog-agent
+          - /opt/datadog-agent
+        dest: "/tmp/datadog-backup-{{ ansible_date_time.epoch }}.tar.gz"
+        format: gz
+      register: backup_result
+
+    - name: Remove current agent installation
+      block:
+        - name: Remove agent packages
+          package:
+            name: "{{ item }}"
+            state: absent
+          loop:
+            - datadog-agent
+            - datadog-agent-base
+          failed_when: false
+
+        - name: Remove agent directories
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/datadog-agent
+            - /opt/datadog-agent
+            - /var/log/datadog-agent
+          failed_when: false
+
+    - name: Install previous version (Linux only)
+      include_tasks: tasks/install_previous_version.yml
+      vars:
+        target_version: "{{ rollback_version }}"
+      when: ansible_os_family != "Windows"
+
+    - name: Skip Windows rollback
+      debug:
+        msg: "Windows rollback is not supported. Skipping rollback for {{ inventory_hostname }}"
+      when: ansible_os_family == "Windows"
+
+    - name: Restore configuration
+      block:
+        - name: Extract backup
+          unarchive:
+            src: "{{ backup_result.archive_path }}"
+            dest: "/tmp/datadog-restore"
+            remote_src: true
+          when: backup_result is succeeded
+
+        - name: Restore configuration files
+          copy:
+            src: "/tmp/datadog-restore/etc/datadog-agent/"
+            dest: "/etc/datadog-agent/"
+            owner: dd-agent
+            group: dd-agent
+            mode: '0644'
+            remote_src: true
+          when: backup_result is succeeded
+
+    - name: Start DataDog agent service
+      systemd:
+        name: datadog-agent
+        state: started
+        enabled: true
+
+    - name: Verify rollback installation
+      include_tasks: tasks/verify_installation.yml
+      tags: [verification, always]
+
+  post_tasks:
+    - name: Send rollback completion notification
+      include_tasks: tasks/notifications.yml
+      vars:
+        notification_type: rollback_completion
+      when: not ansible_skip_tags or 'notifications' not in ansible_skip_tags
+      tags: [notifications, always]
+
+    - name: Generate rollback report
+      include_tasks: tasks/generate_report.yml
+      vars:
+        report_type: rollback
+      tags: [reporting, always]
+
+  rescue:
+    - name: Handle rollback failures
+      include_tasks: tasks/error_handling.yml
+      tags: [error_handling, always]
+
+    - name: Send rollback failure notification
+      include_tasks: tasks/notifications.yml
+      vars:
+        notification_type: rollback_failure
+      tags: [notifications, always]
+
+    - name: Attempt emergency restore
+      block:
+        - name: Stop agent service
+          systemd:
+            name: datadog-agent
+            state: stopped
+          failed_when: false
+
+        - name: Restore from backup
+          unarchive:
+            src: "{{ backup_result.archive_path }}"
+            dest: "/"
+            remote_src: true
+          when: backup_result is succeeded
+          failed_when: false
+
+        - name: Start agent service
+          systemd:
+            name: datadog-agent
+            state: started
+          failed_when: false

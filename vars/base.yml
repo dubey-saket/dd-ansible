@@ -1,0 +1,77 @@
+---
+# Base DataDog configuration
+datadog_agent_version: "7.70.1"
+datadog_agent_major_version: 7
+
+# Global tags applied to all hosts
+datadog_global_tags:
+  - "managed_by:ansible"
+  - "company:{{ company_name | default('mycompany.com') }}"
+  - "deployment_time:{{ ansible_date_time.iso8601 }}"
+
+# Default configuration
+datadog_config:
+  log_level: "{{ datadog_log_level | default('INFO') }}"
+  log_file: "/var/log/datadog/datadog-agent.log"
+  log_to_console: false
+  apm_config:
+    enabled: "{{ datadog_apm_enabled | default(true) }}"
+    apm_non_local_traffic: false
+  logs_enabled: "{{ datadog_logs_enabled | default(true) }}"
+  process_config:
+    enabled: "{{ datadog_process_enabled | default(true) }}"
+  network_config:
+    enabled: "{{ datadog_network_enabled | default(false) }}"
+  security_config:
+    enabled: "{{ datadog_security_enabled | default(false) }}"
+
+# Default checks configuration
+datadog_checks_default:
+  cpu:
+    init_config:
+    instances:
+      - collect_cpu_time: true
+        report_active: true
+  disk:
+    init_config:
+    instances:
+      - use_mount: true
+        exclude:
+          - /proc/*
+          - /sys/*
+          - /dev/*
+  memory:
+    init_config:
+    instances: [{}]
+  network:
+    init_config:
+    instances:
+      - collect_connection_state: true
+        collect_connection_queues: true
+  ntp:
+    init_config:
+    instances:
+      - offset_threshold: 60
+        host: pool.ntp.org
+        port: ntp
+        version: 3
+        timeout: 5
+
+# Deployment configuration
+deployment_config:
+  batch_size: "25%"  # Can be overridden per environment
+  max_fail_percentage: 10
+  timeout: 600
+  retry_attempts: 3
+  rollback_enabled: true
+
+# Monitoring configuration
+monitoring:
+  webhook_enabled: "{{ webhook_notifications_enabled | default(false) }}"
+  webhook_url: "{{ vault_webhook_url | default('') }}"
+  log_file: "/var/log/datadog-deployment.log"
+  health_check_interval: 30
+  health_check_timeout: 300
+
+# Company information
+company_name: "{{ vault_company_name | default('My Company') }}"

@@ -1,0 +1,71 @@
+---
+# Installation verification tasks
+- name: Wait for agent to start
+  wait_for:
+    timeout: 60
+    delay: 10
+
+- name: Check agent service status
+  systemd:
+    name: datadog-agent
+    state: started
+  register: agent_service_status
+
+- name: Verify agent service is active
+  assert:
+    that:
+      - agent_service_status.status.ActiveState == "active"
+      - agent_service_status.status.SubState == "running"
+    fail_msg: "DataDog agent service is not running properly"
+    success_msg: "DataDog agent service is active and running"
+
+- name: Check agent process
+  command: "pgrep -f datadog-agent"
+  register: agent_process
+  failed_when: false
+  changed_when: false
+
+- name: Verify agent process is running
+  assert:
+    that:
+      - agent_process.rc == 0
+      - agent_process.stdout != ""
+    fail_msg: "DataDog agent process is not running"
+    success_msg: "DataDog agent process is running (PID: {{ agent_process.stdout }})"
+
+- name: Test agent configuration
+  command: "datadog-agent configcheck"
+  register: config_test
+  failed_when: false
+  changed_when: false
+
+- name: Verify configuration is valid
+  assert:
+    that:
+      - config_test.rc == 0
+    fail_msg: "DataDog agent configuration validation failed"
+    success_msg: "DataDog agent configuration is valid"
+
+- name: Test agent connectivity to DataDog
+  command: "datadog-agent status"
+  register: connectivity_test
+  failed_when: false
+  changed_when: false
+
+- name: Verify connectivity to DataDog
+  assert:
+    that:
+      - connectivity_test.rc == 0
+      - "'Forwarder' in connectivity_test.stdout"
+    fail_msg: "DataDog agent cannot connect to DataDog platform"
+    success_msg: "DataDog agent connectivity verified"
+
+- name: Check agent logs for errors
+  command: "tail -n 50 /var/log/datadog-agent/agent.log"
+  register: agent_logs
+  failed_when: false
+  changed_when: false
+
+- name: Log recent agent activity
+  debug:
+    msg: "Recent agent logs: {{ agent_logs.stdout_lines | default(['No logs found']) }}"

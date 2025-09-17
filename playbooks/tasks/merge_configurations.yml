@@ -1,0 +1,99 @@
+---
+# Configuration merging tasks
+- name: Merge DataDog configurations
+  set_fact:
+    datadog_config_merged: >-
+      {{
+        datadog_config | default({}) |
+        combine(
+          (datadog_config_redhat | default({})) if ansible_os_family == "RedHat" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_config_debian | default({})) if ansible_os_family == "Debian" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_config_suse | default({})) if ansible_os_family == "Suse" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_config_windows | default({})) if ansible_os_family == "Windows" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_config_dev | default({})) if target_environment == "dev" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_config_staging | default({})) if target_environment == "staging" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_config_prod | default({})) if target_environment == "prod" else {},
+          recursive=True
+        )
+      }}
+
+- name: Merge DataDog checks configurations
+  set_fact:
+    datadog_checks_merged: >-
+      {{
+        datadog_checks_default | default({}) |
+        combine(
+          (datadog_checks_redhat | default({})) if ansible_os_family == "RedHat" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_checks_debian | default({})) if ansible_os_family == "Debian" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_checks_suse | default({})) if ansible_os_family == "Suse" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_checks_windows | default({})) if ansible_os_family == "Windows" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_checks_dev | default({})) if target_environment == "dev" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_checks_staging | default({})) if target_environment == "staging" else {},
+          recursive=True
+        ) |
+        combine(
+          (datadog_checks_prod | default({})) if target_environment == "prod" else {},
+          recursive=True
+        ) |
+        combine(
+          (application_checks | default({})),
+          recursive=True
+        ) |
+        combine(
+          (group_datadog_checks | default({})),
+          recursive=True
+        ) |
+        combine(
+          (host_datadog_checks | default({})),
+          recursive=True
+        )
+      }}
+
+- name: Set deployment ID
+  set_fact:
+    deployment_id: "{{ ansible_date_time.epoch }}-{{ inventory_hostname }}"
+
+- name: Display merged configuration summary
+  debug:
+    msg:
+      - "Environment: {{ target_environment }}"
+      - "OS Family: {{ ansible_os_family }}"
+      - "Agent Version: {{ datadog_agent_version }}"
+      - "DataDog Site: {{ datadog_site | default('datadoghq.com') }}"
+      - "Log Level: {{ datadog_config_merged.log_level | default('INFO') }}"
+      - "APM Enabled: {{ datadog_config_merged.apm_config.enabled | default(false) }}"
+      - "Logs Enabled: {{ datadog_config_merged.logs_enabled | default(false) }}"
+      - "Deployment ID: {{ deployment_id }}"

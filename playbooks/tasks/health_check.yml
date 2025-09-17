@@ -1,0 +1,64 @@
+---
+# Health check tasks
+- name: Pre-deployment system health check
+  block:
+    - name: Check system load
+      command: "uptime"
+      register: system_load
+      changed_when: false
+    
+    - name: Check memory usage
+      command: "free -m"
+      register: memory_usage
+      changed_when: false
+    
+    - name: Check disk usage
+      command: "df -h"
+      register: disk_usage
+      changed_when: false
+    
+    - name: Log system status
+      debug:
+        msg:
+          - "System Load: {{ system_load.stdout }}"
+          - "Memory Usage: {{ memory_usage.stdout }}"
+          - "Disk Usage: {{ disk_usage.stdout }}"
+
+- name: Post-deployment health check
+  when: check_type is defined and check_type == "post_deployment"
+  block:
+    - name: Check DataDog agent status
+      systemd:
+        name: datadog-agent
+        state: started
+      register: agent_status
+    
+    - name: Verify agent is running
+      assert:
+        that:
+          - agent_status.status.ActiveState == "active"
+        fail_msg: "DataDog agent is not running properly"
+        success_msg: "DataDog agent is running successfully"
+    
+    - name: Check agent configuration
+      command: "datadog-agent configcheck"
+      register: config_check
+      failed_when: false
+      changed_when: false
+    
+    - name: Verify configuration is valid
+      assert:
+        that:
+          - config_check.rc == 0
+        fail_msg: "DataDog agent configuration is invalid"
+        success_msg: "DataDog agent configuration is valid"
+    
+    - name: Test agent connectivity
+      command: "datadog-agent status"
+      register: agent_status_check
+      failed_when: false
+      changed_when: false
+    
+    - name: Log agent status
+      debug:
+        msg: "Agent Status: {{ agent_status_check.stdout_lines | default(['Status check failed']) }}"

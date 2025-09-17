@@ -1,0 +1,16 @@
+---
+collections:
+  - name: datadog.dd
+    version: 6.2.0
+  - name: community.general
+    version: 8.0.0
+  - name: ansible.posix
+    version: 1.5.4
+  - name: community.crypto
+    version: 2.18.0
+  - name: ansible.windows
+    version: 1.13.0
+
+roles:
+  - name: datadog.dd.agent
+    version: 6.2.0

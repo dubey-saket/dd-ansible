@@ -1,0 +1,80 @@
+---
+# Windows specific configuration
+datadog_config_windows:
+  # Windows specific paths
+  conf_path: "C:\\ProgramData\\Datadog"
+  log_path: "C:\\ProgramData\\Datadog\\logs"
+  run_path: "C:\\ProgramData\\Datadog\\run"
+  
+  # Service management
+  service_name: "DatadogAgent"
+  service_user: "ddagentuser"
+  service_group: "ddagentuser"
+  
+  # Windows specific settings
+  win32_event_log:
+    enabled: true
+    channels:
+      - "System"
+      - "Application"
+      - "Security"
+  
+  # Performance counters
+  performance_counters:
+    enabled: true
+    refresh_interval: 60
+
+# Windows specific checks
+datadog_checks_windows:
+  windows_service:
+    init_config:
+    instances:
+      - services:
+          - "DatadogAgent"
+        tags:
+          - "os:windows"
+  windows_performance:
+    init_config:
+    instances:
+      - metrics:
+          - "\\Processor(_Total)\\% Processor Time"
+          - "\\Memory\\Available Bytes"
+          - "\\LogicalDisk(_Total)\\Free Megabytes"
+        tags:
+          - "os:windows"
+  windows_event_log:
+    init_config:
+    instances:
+      - channels:
+          - "System"
+          - "Application"
+        tags:
+          - "os:windows"
+  wmi_check:
+    init_config:
+    instances:
+      - class: "Win32_OperatingSystem"
+        metrics:
+          - "TotalVisibleMemorySize"
+          - "FreePhysicalMemory"
+        tags:
+          - "os:windows"
+
+# Windows package management
+package_manager: "chocolatey"
+datadog_installer_url: "https://s3.amazonaws.com/ddagent-windows-stable/datadog-agent-7-latest.amd64.msi"
+
+# Windows firewall rules
+firewall_rules:
+  - name: "DataDog Agent"
+    direction: "inbound"
+    action: "allow"
+    protocol: "tcp"
+    local_port: "8126"
+    description: "DataDog APM"
+  - name: "DataDog Agent Outbound"
+    direction: "outbound"
+    action: "allow"
+    protocol: "tcp"
+    remote_port: "443"
+    description: "DataDog Agent Communication"

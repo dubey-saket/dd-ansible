@@ -1,0 +1,88 @@
+---
+# Error handling tasks
+- name: Log deployment failure details
+  debug:
+    msg:
+      - "Deployment failed for host: {{ inventory_hostname }}"
+      - "Error details: {{ ansible_failed_result | default('Unknown error') }}"
+      - "Failed task: {{ ansible_failed_task | default('Unknown task') }}"
+
+- name: Collect system information for troubleshooting
+  block:
+    - name: Get system information
+      command: "uname -a"
+      register: system_info
+      failed_when: false
+      changed_when: false
+    
+    - name: Get memory information
+      command: "free -m"
+      register: memory_info
+      failed_when: false
+      changed_when: false
+    
+    - name: Get disk information
+      command: "df -h"
+      register: disk_info
+      failed_when: false
+      changed_when: false
+    
+    - name: Get network information
+      command: "ss -tuln"
+      register: network_info
+      failed_when: false
+      changed_when: false
+
+- name: Save troubleshooting information
+  block:
+    - name: Create troubleshooting directory
+      file:
+        path: "/var/log/datadog-deployment/troubleshooting"
+        state: directory
+        mode: '0755'
+      become: true
+
+    - name: Save system information
+      copy:
+        content: |
+          Host: {{ inventory_hostname }}
+          Environment: {{ target_environment }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          
+          System Info:
+          {{ system_info.stdout }}
+          
+          Memory Info:
+          {{ memory_info.stdout }}
+          
+          Disk Info:
+          {{ disk_info.stdout }}
+          
+          Network Info:
+          {{ network_info.stdout }}
+          
+          Failed Task: {{ ansible_failed_task | default('Unknown') }}
+          Error: {{ ansible_failed_result | default('Unknown error') }}
+        dest: "/var/log/datadog-deployment/troubleshooting/{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.log"
+        mode: '0644'
+      become: true
+
+- name: Attempt cleanup on failure
+  block:
+    - name: Stop agent service if running
+      systemd:
+        name: datadog-agent
+        state: stopped
+      failed_when: false
+
+    - name: Remove partial installation files
+      file:
+        path: "/etc/datadog-agent"
+        state: absent
+      failed_when: false
+      when: rollback_on_failure | default(true)
+
+- name: Set deployment status
+  set_fact:
+    deployment_status: "failed"
+    deployment_error: "{{ ansible_failed_result | default('Unknown error') }}"

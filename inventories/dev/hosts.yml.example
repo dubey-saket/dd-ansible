@@ -1,0 +1,117 @@
+---
+# Development environment inventory example
+# Copy this file to hosts.yml and update with your actual server information
+
+all:
+  children:
+    dev_servers:
+      hosts:
+        # Linux servers
+        dev-web-01:
+          ansible_host: 192.168.1.10
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+          datadog_host_tags:
+            - "role:web"
+            - "service:nginx"
+            - "os:linux"
+        dev-web-02:
+          ansible_host: 192.168.1.11
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+          datadog_host_tags:
+            - "role:web"
+            - "service:nginx"
+            - "os:linux"
+        dev-db-01:
+          ansible_host: 192.168.1.20
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+          datadog_host_tags:
+            - "role:database"
+            - "service:postgresql"
+            - "os:linux"
+        dev-app-01:
+          ansible_host: 192.168.1.30
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+          datadog_host_tags:
+            - "role:application"
+            - "service:nodejs"
+            - "os:linux"
+        
+        # Windows servers
+        dev-web-win-01:
+          ansible_host: 192.168.1.40
+          ansible_user: Administrator
+          ansible_password: "{{ vault_windows_password }}"
+          ansible_connection: winrm
+          ansible_winrm_transport: basic
+          ansible_winrm_server_cert_validation: ignore
+          datadog_host_tags:
+            - "role:web"
+            - "service:iis"
+            - "os:windows"
+        dev-db-win-01:
+          ansible_host: 192.168.1.50
+          ansible_user: Administrator
+          ansible_password: "{{ vault_windows_password }}"
+          ansible_connection: winrm
+          ansible_winrm_transport: basic
+          ansible_winrm_server_cert_validation: ignore
+          datadog_host_tags:
+            - "role:database"
+            - "service:sqlserver"
+            - "os:windows"
+        
+        # RedHat/CentOS servers
+        dev-app-rhel-01:
+          ansible_host: 192.168.1.60
+          ansible_user: centos
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+          datadog_host_tags:
+            - "role:application"
+            - "service:tomcat"
+            - "os:rhel"
+        
+        # SUSE servers
+        dev-app-suse-01:
+          ansible_host: 192.168.1.70
+          ansible_user: suse
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+          datadog_host_tags:
+            - "role:application"
+            - "service:apache"
+            - "os:suse"
+            
+      vars:
+        # Development specific variables
+        datadog_log_level: INFO
+        webhook_notifications_enabled: false
+        batch_size: "50%"
+        max_fail_percentage: 20
+        
+        # Application-specific checks
+        group_datadog_checks:
+          # Web servers get HTTP checks
+          http_check:
+            init_config:
+            instances:
+              - name: "Dev Web Health Check"
+                url: "http://{{ inventory_hostname }}/health"
+                timeout: 10
+                tags:
+                  - "env:dev"
+                  - "service:web"
+          
+          # Database servers get database checks
+          postgres:
+            init_config:
+            instances:
+              - host: "{{ inventory_hostname }}"
+                port: 5432
+                username: "datadog"
+                password: "{{ vault_postgres_password | default('') }}"
+                tags:
+                  - "env:dev"
+                  - "service:database"

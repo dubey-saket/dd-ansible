@@ -1,0 +1,21 @@
+---
+# Staging environment vault variables
+# Copy this file to staging.yml and encrypt with: ansible-vault encrypt staging.yml
+# Usage: ansible-vault edit staging.yml
+
+# DataDog API Key (get from DataDog dashboard)
+vault_datadog_api_key: "your_datadog_api_key_here"
+
+# DataDog Site (us1, us3, us5, eu1, ap1, etc.)
+vault_datadog_site: "datadoghq.com"
+
+# Webhook URL for Teams notifications
+vault_webhook_url: "https://your-teams-webhook-url-here"
+
+# Company information
+vault_company_name: "Your Company Name"
+
+# Additional sensitive configuration
+vault_additional_config:
+  debug_mode: false
+  verbose_logging: false

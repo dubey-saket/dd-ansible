@@ -1,0 +1,254 @@
+---
+# Enhanced notification tasks with comprehensive error handling and validation
+- name: Validate notification configuration
+  block:
+    - name: Check webhook configuration
+      assert:
+        that:
+          - monitoring.webhook_enabled is defined
+          - monitoring.webhook_enabled is boolean
+        fail_msg: |
+          Invalid webhook configuration:
+          - webhook_enabled must be defined and be a boolean
+          - Current value: {{ monitoring.webhook_enabled | default('UNDEFINED') }}
+        success_msg: "Webhook configuration validation passed"
+
+    - name: Validate webhook URL when enabled
+      assert:
+        that:
+          - vault_webhook_url is defined
+          - vault_webhook_url is string
+          - vault_webhook_url | length >= 10
+          - vault_webhook_url is match('^https?://.*')
+        fail_msg: |
+          Invalid webhook URL when notifications are enabled:
+          - URL must be defined
+          - Must be a string
+          - Must be at least 10 characters
+          - Must start with http:// or https://
+          - Current value: {{ vault_webhook_url | default('UNDEFINED') }}
+        success_msg: "Webhook URL validation passed"
+      when: monitoring.webhook_enabled | default(false)
+
+    - name: Validate notification type
+      assert:
+        that:
+          - notification_type is defined
+          - notification_type is string
+          - notification_type in ['start', 'completion', 'failure', 'rollback_start', 'rollback_completion', 'rollback_failure']
+        fail_msg: |
+          Invalid notification type:
+          - Must be defined and be a string
+          - Must be one of: start, completion, failure, rollback_start, rollback_completion, rollback_failure
+          - Current value: {{ notification_type | default('UNDEFINED') }}
+        success_msg: "Notification type validation passed"
+
+- name: Send webhook notification with enhanced error handling
+  when: 
+    - monitoring.webhook_enabled | default(false)
+    - vault_webhook_url is defined
+    - vault_webhook_url != ""
+  block:
+    - name: Prepare notification payload with validation
+      set_fact:
+        notification_payload:
+          text: "DataDog Agent Deployment {{ notification_type | title }}"
+          attachments:
+            - color: "{{ 'good' if notification_type == 'completion' or notification_type == 'rollback_completion' else 'danger' if notification_type in ['failure', 'rollback_failure'] else 'warning' }}"
+              fields:
+                - title: "Environment"
+                  value: "{{ target_environment | upper }}"
+                  short: true
+                - title: "Host"
+                  value: "{{ inventory_hostname }}"
+                  short: true
+                - title: "Status"
+                  value: "{{ notification_type | title }}"
+                  short: true
+                - title: "Timestamp"
+                  value: "{{ ansible_date_time.iso8601 }}"
+                  short: true
+                - title: "Deployment ID"
+                  value: "{{ deployment_id | default('unknown') }}"
+                  short: true
+                - title: "OS Family"
+                  value: "{{ ansible_os_family }}"
+                  short: true
+                - title: "Agent Version"
+                  value: "{{ datadog_agent_version | default('unknown') }}"
+                  short: true
+                {% if notification_type in ['failure', 'rollback_failure'] %}
+                - title: "Error Details"
+                  value: "{{ deployment_error | default('No error details available') }}"
+                  short: false
+                {% endif %}
+
+    - name: Validate notification payload
+      assert:
+        that:
+          - notification_payload is defined
+          - notification_payload.text is defined
+          - notification_payload.attachments is defined
+          - notification_payload.attachments | length > 0
+        fail_msg: |
+          Invalid notification payload:
+          - Payload must be defined
+          - Must contain text and attachments
+          - Current payload: {{ notification_payload | default('UNDEFINED') }}
+        success_msg: "Notification payload validation passed"
+
+    - name: Send Teams webhook notification with retry logic
+      uri:
+        url: "{{ vault_webhook_url }}"
+        method: POST
+        body_format: json
+        body: "{{ notification_payload }}"
+        status_code: [200, 201, 202]
+        timeout: 30
+        retries: 3
+        delay: 5
+      register: webhook_result
+      failed_when: false
+      retries: 3
+      delay: 5
+
+    - name: Validate webhook response
+      assert:
+        that:
+          - webhook_result.status is defined
+          - webhook_result.status >= 200
+          - webhook_result.status < 300
+        fail_msg: |
+          Webhook notification failed:
+          - URL: {{ vault_webhook_url[:50] }}...
+          - Status code: {{ webhook_result.status | default('Unknown') }}
+          - Response: {{ webhook_result.content | default('No response') }}
+          - Error: {{ webhook_result.msg | default('No error message') }}
+          
+          Please check:
+          1. Webhook URL is correct and accessible
+          2. Teams webhook is properly configured
+          3. Network connectivity to Teams
+        success_msg: "Teams webhook notification sent successfully"
+
+    - name: Log webhook success
+      debug:
+        msg: 
+          - "✅ Webhook notification sent successfully"
+          - "Status: {{ webhook_result.status }}"
+          - "Response time: {{ webhook_result.elapsed | default('Unknown') }}s"
+          - "Notification type: {{ notification_type }}"
+      when: webhook_result.status >= 200 and webhook_result.status < 300
+
+    - name: Log webhook failure
+      debug:
+        msg:
+          - "❌ Webhook notification failed"
+          - "Status: {{ webhook_result.status | default('Unknown') }}"
+          - "Error: {{ webhook_result.msg | default('No error message') }}"
+          - "Will log to file instead"
+      when: webhook_result.status < 200 or webhook_result.status >= 300
+
+- name: Log notification to file with enhanced formatting
+  always:
+    block:
+      - name: Create log directory (Linux)
+        file:
+          path: "/var/log/datadog-deployment"
+          state: directory
+          mode: '0755'
+        become: true
+        when: ansible_os_family != "Windows"
+
+      - name: Create log directory (Windows)
+        win_file:
+          path: "C:\\ProgramData\\Datadog\\logs\\deployment"
+          state: directory
+        when: ansible_os_family == "Windows"
+
+      - name: Prepare log entry
+        set_fact:
+          log_entry: |
+            {{ ansible_date_time.iso8601 }} | {{ target_environment | upper }} | {{ inventory_hostname }} | {{ notification_type | upper }} | {{ ansible_play_name }} | OS:{{ ansible_os_family }} | Agent:{{ datadog_agent_version | default('unknown') }} | Webhook:{{ 'SUCCESS' if webhook_result is defined and webhook_result.status >= 200 and webhook_result.status < 300 else 'FAILED' if webhook_result is defined else 'SKIPPED' }}
+
+      - name: Log notification to file (Linux)
+        lineinfile:
+          path: "/var/log/datadog-deployment/deployment.log"
+          line: "{{ log_entry }}"
+          create: true
+          mode: '0644'
+        become: true
+        when: ansible_os_family != "Windows"
+
+      - name: Log notification to file (Windows)
+        win_lineinfile:
+          path: "C:\\ProgramData\\Datadog\\logs\\deployment\\deployment.log"
+          line: "{{ log_entry }}"
+          create: true
+        when: ansible_os_family == "Windows"
+
+      - name: Create structured JSON log entry
+        set_fact:
+          json_log_entry:
+            timestamp: "{{ ansible_date_time.iso8601 }}"
+            environment: "{{ target_environment }}"
+            hostname: "{{ inventory_hostname }}"
+            notification_type: "{{ notification_type }}"
+            play_name: "{{ ansible_play_name }}"
+            os_family: "{{ ansible_os_family }}"
+            agent_version: "{{ datadog_agent_version | default('unknown') }}"
+            webhook_enabled: "{{ monitoring.webhook_enabled | default(false) }}"
+            webhook_success: "{{ webhook_result.status >= 200 and webhook_result.status < 300 if webhook_result is defined else false }}"
+            webhook_status: "{{ webhook_result.status | default('N/A') }}"
+            webhook_response_time: "{{ webhook_result.elapsed | default('N/A') }}"
+            deployment_id: "{{ deployment_id | default('unknown') }}"
+            error_details: "{{ deployment_error | default('') }}"
+
+      - name: Log structured JSON entry (Linux)
+        copy:
+          content: "{{ json_log_entry | to_nice_json }}"
+          dest: "/var/log/datadog-deployment/notifications-{{ ansible_date_time.epoch }}.json"
+          mode: '0644'
+        become: true
+        when: ansible_os_family != "Windows"
+
+      - name: Log structured JSON entry (Windows)
+        win_copy:
+          content: "{{ json_log_entry | to_nice_json }}"
+          dest: "C:\\ProgramData\\Datadog\\logs\\deployment\\notifications-{{ ansible_date_time.epoch }}.json"
+        when: ansible_os_family == "Windows"
+
+- name: Handle notification failures gracefully
+  block:
+    - name: Log notification configuration when disabled
+      debug:
+        msg:
+          - "📝 Webhook notifications are disabled"
+          - "Environment: {{ target_environment }}"
+          - "Host: {{ inventory_hostname }}"
+          - "Notification type: {{ notification_type }}"
+          - "Log entry created in deployment log file"
+      when: not (monitoring.webhook_enabled | default(false))
+
+    - name: Log missing webhook URL
+      debug:
+        msg:
+          - "⚠️  Webhook notifications enabled but URL not configured"
+          - "Environment: {{ target_environment }}"
+          - "Host: {{ inventory_hostname }}"
+          - "Please configure vault_webhook_url in vault files"
+      when: 
+        - monitoring.webhook_enabled | default(false)
+        - not (vault_webhook_url is defined and vault_webhook_url != "")
+
+- name: Summary notification status
+  debug:
+    msg:
+      - "=== NOTIFICATION SUMMARY ==="
+      - "Type: {{ notification_type }}"
+      - "Environment: {{ target_environment }}"
+      - "Host: {{ inventory_hostname }}"
+      - "Webhook Enabled: {{ monitoring.webhook_enabled | default(false) }}"
+      - "Webhook Sent: {{ 'YES' if webhook_result is defined and webhook_result.status >= 200 and webhook_result.status < 300 else 'NO' }}"
+      - "Log Entry: YES"
+      - "Status: {{ 'SUCCESS' if webhook_result is defined and webhook_result.status >= 200 and webhook_result.status < 300 else 'LOGGED ONLY' }}"

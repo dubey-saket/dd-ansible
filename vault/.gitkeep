@@ -1,0 +1,2 @@
+# This file ensures the vault directory is tracked by git
+# while keeping the actual vault files out of version control

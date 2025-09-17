@@ -1,0 +1,89 @@
+---
+# Windows specific installation tasks
+- name: Check if DataDog agent is already installed
+  win_service:
+    name: "DatadogAgent"
+  register: datadog_service_check
+  failed_when: false
+  changed_when: false
+
+- name: Download DataDog agent installer
+  win_get_url:
+    url: "{{ datadog_installer_url }}"
+    dest: "C:\\temp\\datadog-agent.msi"
+  when: datadog_service_check.exists == false
+
+- name: Install DataDog agent
+  win_package:
+    path: "C:\\temp\\datadog-agent.msi"
+    state: present
+    arguments: "/quiet APIKEY={{ vault_datadog_api_key }} SITE={{ datadog_site | default('datadoghq.com') }} HOSTNAME={{ ansible_hostname }}"
+  register: datadog_install_result
+  when: datadog_service_check.exists == false
+
+- name: Wait for service to be available
+  win_service:
+    name: "DatadogAgent"
+    state: started
+  when: datadog_service_check.exists == false
+
+- name: Configure DataDog agent
+  block:
+    - name: Create DataDog configuration directory
+      win_file:
+        path: "C:\\ProgramData\\Datadog"
+        state: directory
+        owner: "ddagentuser"
+        group: "ddagentuser"
+
+    - name: Set DataDog configuration
+      win_lineinfile:
+        path: "C:\\ProgramData\\Datadog\\datadog.yaml"
+        regexp: '^api_key:'
+        line: "api_key: {{ vault_datadog_api_key }}"
+        create: true
+
+    - name: Set DataDog site
+      win_lineinfile:
+        path: "C:\\ProgramData\\Datadog\\datadog.yaml"
+        regexp: '^site:'
+        line: "site: {{ datadog_site | default('datadoghq.com') }}"
+        create: true
+
+    - name: Set DataDog tags
+      win_lineinfile:
+        path: "C:\\ProgramData\\Datadog\\datadog.yaml"
+        regexp: '^tags:'
+        line: "tags: {{ datadog_global_tags + datadog_env_tags + (datadog_host_tags | default([])) | join(',') }}"
+        create: true
+
+    - name: Set log level
+      win_lineinfile:
+        path: "C:\\ProgramData\\Datadog\\datadog.yaml"
+        regexp: '^log_level:'
+        line: "log_level: {{ datadog_config_merged.log_level | default('INFO') }}"
+        create: true
+
+- name: Configure Windows firewall rules
+  win_firewall_rule:
+    name: "{{ item.name }}"
+    direction: "{{ item.direction }}"
+    action: "{{ item.action }}"
+    protocol: "{{ item.protocol }}"
+    local_port: "{{ item.local_port | default('') }}"
+    remote_port: "{{ item.remote_port | default('') }}"
+    description: "{{ item.description }}"
+    state: present
+  loop: "{{ firewall_rules | default([]) }}"
+  when: ansible_os_family == "Windows"
+
+- name: Start DataDog agent service
+  win_service:
+    name: "DatadogAgent"
+    state: started
+    start_mode: auto
+
+- name: Wait for agent to initialize
+  win_wait_for:
+    timeout: 60
+    delay: 10

@@ -1,0 +1,70 @@
+---
+# Report generation tasks
+- name: Generate deployment report
+  block:
+    - name: Set deployment timestamp
+      set_fact:
+        deployment_timestamp: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Collect deployment statistics
+      set_fact:
+        deployment_stats:
+          host: "{{ inventory_hostname }}"
+          environment: "{{ target_environment }}"
+          timestamp: "{{ deployment_timestamp }}"
+          status: "{{ deployment_status | default('success') }}"
+          error: "{{ deployment_error | default('None') }}"
+          agent_version: "{{ datadog_agent_version }}"
+          site: "{{ datadog_site }}"
+
+    - name: Create report directory
+      file:
+        path: "/var/log/datadog-deployment/reports"
+        state: directory
+        mode: '0755'
+      become: true
+
+    - name: Generate JSON report
+      copy:
+        content: "{{ deployment_stats | to_nice_json }}"
+        dest: "/var/log/datadog-deployment/reports/{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.json"
+        mode: '0644'
+      become: true
+
+    - name: Generate human-readable report
+      copy:
+        content: |
+          DataDog Agent Deployment Report
+          =================================
+          
+          Host: {{ inventory_hostname }}
+          Environment: {{ target_environment | upper }}
+          Timestamp: {{ deployment_timestamp }}
+          Status: {{ deployment_status | default('SUCCESS') | upper }}
+          
+          {% if deployment_error is defined and deployment_error != 'None' %}
+          Error: {{ deployment_error }}
+          {% endif %}
+          
+          Configuration:
+          - Agent Version: {{ datadog_agent_version }}
+          - DataDog Site: {{ datadog_site }}
+          - API Key: {{ 'CONFIGURED' if vault_datadog_api_key is defined else 'NOT CONFIGURED' }}
+          
+          Deployment Details:
+          - Batch Size: {{ batch_size | default('25%') }}
+          - Max Fail Percentage: {{ max_fail_percentage | default(10) }}%
+          - Rollback Enabled: {{ rollback_enabled | default(false) }}
+          
+          {% if deployment_status == 'success' %}
+          ✅ Deployment completed successfully
+          {% else %}
+          ❌ Deployment failed
+          {% endif %}
+        dest: "/var/log/datadog-deployment/reports/{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.txt"
+        mode: '0644'
+      become: true
+
+- name: Set deployment status for notifications
+  set_fact:
+    deployment_status: "{{ deployment_status | default('success') }}"

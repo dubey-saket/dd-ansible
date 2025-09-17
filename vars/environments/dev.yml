@@ -1,0 +1,55 @@
+---
+# Development environment configuration
+target_environment: dev
+
+# Environment specific tags
+datadog_env_tags:
+  - "env:dev"
+  - "tier:development"
+
+# Development specific configuration
+datadog_config_dev:
+  log_level: INFO
+  apm_config:
+    enabled: true
+    apm_non_local_traffic: true
+  logs_enabled: true
+  process_config:
+    enabled: true
+  network_config:
+    enabled: false
+  security_config:
+    enabled: false
+
+# Development specific checks
+datadog_checks_dev:
+  http_check:
+    init_config:
+    instances:
+      - name: "Dev Health Check"
+        url: "{{ dev_health_check_url | default('http://localhost:8080/health') }}"
+        timeout: 10
+        include_content: true
+        collect_response_time: true
+        tags:
+          - "env:dev"
+          - "service:health-check"
+
+# Deployment configuration for dev
+deployment_config:
+  batch_size: "50%"
+  max_fail_percentage: 20
+  timeout: 300
+  retry_attempts: 2
+  rollback_enabled: false
+
+# Monitoring configuration for dev
+monitoring:
+  webhook_enabled: false  # Disable webhooks in dev by default
+  log_level: DEBUG
+  health_check_interval: 60
+  health_check_timeout: 180
+
+# Development specific variables
+dev_health_check_url: "http://localhost:8080/health"
+dev_api_timeout: 30

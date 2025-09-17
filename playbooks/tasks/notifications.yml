@@ -1,0 +1,63 @@
+---
+# Notification tasks
+- name: Send webhook notification
+  when: 
+    - monitoring.webhook_enabled | default(false)
+    - vault_webhook_url is defined
+    - vault_webhook_url != ""
+  block:
+    - name: Prepare notification payload
+      set_fact:
+        notification_payload:
+          text: "DataDog Agent Deployment {{ notification_type | title }}"
+          attachments:
+            - color: "{{ 'good' if notification_type == 'completion' else 'danger' if notification_type == 'failure' else 'warning' }}"
+              fields:
+                - title: "Environment"
+                  value: "{{ target_environment | upper }}"
+                  short: true
+                - title: "Host"
+                  value: "{{ inventory_hostname }}"
+                  short: true
+                - title: "Status"
+                  value: "{{ notification_type | title }}"
+                  short: true
+                - title: "Timestamp"
+                  value: "{{ ansible_date_time.iso8601 }}"
+                  short: true
+                - title: "Deployment ID"
+                  value: "{{ deployment_id | default('unknown') }}"
+                  short: true
+
+    - name: Send Teams webhook notification
+      uri:
+        url: "{{ vault_webhook_url }}"
+        method: POST
+        body_format: json
+        body: "{{ notification_payload }}"
+        status_code: 200
+        timeout: 30
+      register: webhook_result
+      failed_when: false
+
+    - name: Log webhook result
+      debug:
+        msg: "Webhook notification sent: {{ 'Success' if webhook_result.status == 200 else 'Failed' }}"
+
+- name: Log notification to file
+  always:
+    block:
+      - name: Create log directory
+        file:
+          path: "/var/log/datadog-deployment"
+          state: directory
+          mode: '0755'
+        become: true
+
+      - name: Log notification to file
+        lineinfile:
+          path: "/var/log/datadog-deployment/deployment.log"
+          line: "{{ ansible_date_time.iso8601 }} - {{ target_environment | upper }} - {{ inventory_hostname }} - {{ notification_type | upper }} - {{ ansible_play_name }}"
+          create: true
+          mode: '0644'
+        become: true

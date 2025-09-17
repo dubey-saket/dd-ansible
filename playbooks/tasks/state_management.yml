@@ -1,0 +1,143 @@
+---
+# State management tasks for tracking server states and configurations
+- name: Create state directory
+  file:
+    path: "/var/log/datadog-deployment/state"
+    state: directory
+    mode: '0755'
+  become: true
+  when: ansible_os_family != "Windows"
+
+- name: Create state directory (Windows)
+  win_file:
+    path: "C:\\ProgramData\\Datadog\\state"
+    state: directory
+  when: ansible_os_family == "Windows"
+
+- name: Collect current system state
+  set_fact:
+    current_state:
+      hostname: "{{ ansible_hostname }}"
+      environment: "{{ target_environment }}"
+      os_family: "{{ ansible_os_family }}"
+      os_version: "{{ ansible_distribution_version }}"
+      architecture: "{{ ansible_architecture }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      deployment_id: "{{ deployment_id }}"
+      datadog_agent_version: "{{ datadog_agent_version }}"
+      datadog_site: "{{ datadog_site | default('datadoghq.com') }}"
+      tags: "{{ datadog_global_tags + datadog_env_tags + (datadog_host_tags | default([])) }}"
+      checks_config: "{{ datadog_checks_merged }}"
+      config_hash: "{{ (datadog_config_merged | to_json) | hash('sha256') }}"
+
+- name: Get current DataDog agent status
+  block:
+    - name: Check agent service status (Linux)
+      systemd:
+        name: "{{ datadog_config_redhat.service_name | default('datadog-agent') }}"
+      register: agent_service_status
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family != "Windows"
+
+    - name: Check agent service status (Windows)
+      win_service:
+        name: "{{ datadog_config_windows.service_name | default('DatadogAgent') }}"
+      register: agent_service_status
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family == "Windows"
+
+    - name: Get agent version (Linux)
+      command: "datadog-agent version"
+      register: agent_version_check
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family != "Windows"
+
+    - name: Get agent version (Windows)
+      win_command: "C:\\Program Files\\Datadog\\Datadog Agent\\bin\\agent.exe version"
+      register: agent_version_check
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family == "Windows"
+
+    - name: Update state with agent information
+      set_fact:
+        current_state: "{{ current_state | combine({
+          'agent_installed': agent_service_status.exists | default(false),
+          'agent_running': agent_service_status.status.ActiveState | default('unknown') == 'active' if ansible_os_family != 'Windows' else agent_service_status.status.State | default('unknown') == 'Running',
+          'agent_version_installed': agent_version_check.stdout | default('unknown')
+        }) }}"
+
+- name: Save current state to file (Linux)
+  copy:
+    content: "{{ current_state | to_nice_json }}"
+    dest: "/var/log/datadog-deployment/state/{{ ansible_hostname }}-{{ ansible_date_time.epoch }}.json"
+    mode: '0644'
+  become: true
+  when: ansible_os_family != "Windows"
+
+- name: Save current state to file (Windows)
+  win_copy:
+    content: "{{ current_state | to_nice_json }}"
+    dest: "C:\\ProgramData\\Datadog\\state\\{{ ansible_hostname }}-{{ ansible_date_time.epoch }}.json"
+  when: ansible_os_family == "Windows"
+
+- name: Compare with previous state
+  block:
+    - name: Find previous state file (Linux)
+      find:
+        paths: "/var/log/datadog-deployment/state"
+        patterns: "{{ ansible_hostname }}-*.json"
+        excludes: "{{ ansible_hostname }}-{{ ansible_date_time.epoch }}.json"
+      register: previous_state_files
+      when: ansible_os_family != "Windows"
+
+    - name: Find previous state file (Windows)
+      win_find:
+        paths: "C:\\ProgramData\\Datadog\\state"
+        patterns: "{{ ansible_hostname }}-*.json"
+        excludes: "{{ ansible_hostname }}-{{ ansible_date_time.epoch }}.json"
+      register: previous_state_files
+      when: ansible_os_family == "Windows"
+
+    - name: Load previous state (Linux)
+      slurp:
+        src: "{{ previous_state_files.files | sort(attribute='mtime') | last.path }}"
+      register: previous_state_content
+      when: 
+        - ansible_os_family != "Windows"
+        - previous_state_files.files | length > 0
+
+    - name: Load previous state (Windows)
+      slurp:
+        src: "{{ previous_state_files.files | sort(attribute='mtime') | last.path }}"
+      register: previous_state_content
+      when: 
+        - ansible_os_family == "Windows"
+        - previous_state_files.files | length > 0
+
+    - name: Parse previous state
+      set_fact:
+        previous_state: "{{ previous_state_content.content | b64decode | from_json }}"
+      when: previous_state_content is defined
+
+    - name: Compare states
+      set_fact:
+        state_changes:
+          configuration_changed: "{{ previous_state.config_hash | default('') != current_state.config_hash }}"
+          agent_version_changed: "{{ previous_state.datadog_agent_version | default('') != current_state.datadog_agent_version }}"
+          tags_changed: "{{ previous_state.tags | default([]) != current_state.tags }}"
+          checks_changed: "{{ previous_state.checks_config | default({}) != current_state.checks_config }}"
+      when: previous_state is defined
+
+    - name: Log state changes
+      debug:
+        msg:
+          - "State comparison completed for {{ ansible_hostname }}"
+          - "Configuration changed: {{ state_changes.configuration_changed | default(false) }}"
+          - "Agent version changed: {{ state_changes.agent_version_changed | default(false) }}"
+          - "Tags changed: {{ state_changes.tags_changed | default(false) }}"
+          - "Checks changed: {{ state_changes.checks_changed | default(false) }}"
+      when: state_changes is defined

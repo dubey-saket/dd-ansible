@@ -1,0 +1,61 @@
+---
+# Linux specific installation tasks
+- name: Add DataDog repository (RedHat)
+  yum_repository:
+    name: datadog
+    description: DataDog Agent Repository
+    baseurl: "https://yum.datadoghq.com/stable/{{ datadog_agent_major_version }}/x86_64/"
+    gpgcheck: true
+    gpgkey: "https://keys.datadoghq.com/DATADOG_RPM_KEY_CURRENT.public"
+  when: ansible_os_family == "RedHat"
+
+- name: Add DataDog repository (Debian)
+  apt_repository:
+    repo: "deb https://apt.datadoghq.com/ stable {{ datadog_agent_major_version }}"
+    state: present
+    update_cache: true
+    filename: datadog
+  when: ansible_os_family == "Debian"
+
+- name: Add DataDog repository (SUSE)
+  zypper_repository:
+    name: datadog
+    repo: "https://yum.datadoghq.com/suse/stable/{{ datadog_agent_major_version }}/x86_64/"
+    state: present
+  when: ansible_os_family == "Suse"
+
+- name: Install DataDog agent (RedHat)
+  yum:
+    name: "datadog-agent-{{ datadog_agent_version }}-1.x86_64"
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install DataDog agent (Debian)
+  apt:
+    name: "datadog-agent={{ datadog_agent_version }}-1"
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: Install DataDog agent (SUSE)
+  zypper:
+    name: "datadog-agent-{{ datadog_agent_version }}-1.x86_64"
+    state: present
+  when: ansible_os_family == "Suse"
+
+- name: Configure firewall rules (RedHat/CentOS)
+  firewalld:
+    port: "{{ item.port }}/{{ item.protocol }}"
+    permanent: true
+    state: enabled
+    immediate: true
+  loop: "{{ firewall_rules | default([]) }}"
+  when: ansible_os_family == "RedHat"
+
+- name: Configure firewall rules (Debian/Ubuntu)
+  ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.protocol }}"
+  loop: "{{ firewall_rules | default([]) }}"
+  when: ansible_os_family == "Debian"

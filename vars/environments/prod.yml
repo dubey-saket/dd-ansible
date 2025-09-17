@@ -1,0 +1,89 @@
+---
+# Production environment configuration
+target_environment: prod
+
+# Environment specific tags
+datadog_env_tags:
+  - "env:prod"
+  - "tier:production"
+  - "critical:true"
+
+# Production specific configuration
+datadog_config_prod:
+  log_level: ERROR
+  apm_config:
+    enabled: true
+    apm_non_local_traffic: false
+  logs_enabled: true
+  process_config:
+    enabled: true
+  network_config:
+    enabled: true
+  security_config:
+    enabled: true
+
+# Production specific checks with enhanced monitoring
+datadog_checks_prod:
+  http_check:
+    init_config:
+    instances:
+      - name: "Prod Health Check"
+        url: "{{ prod_health_check_url | default('http://localhost:8080/health') }}"
+        timeout: 10
+        include_content: false
+        collect_response_time: true
+        tags:
+          - "env:prod"
+          - "service:health-check"
+          - "critical:true"
+  disk:
+    init_config:
+    instances:
+      - use_mount: true
+        exclude:
+          - /proc/*
+          - /sys/*
+          - /dev/*
+        warning: 70
+        critical: 85
+        tags:
+          - "env:prod"
+          - "critical:true"
+  memory:
+    init_config:
+    instances:
+      - warning: 80
+        critical: 90
+        tags:
+          - "env:prod"
+          - "critical:true"
+  cpu:
+    init_config:
+    instances:
+      - collect_cpu_time: true
+        report_active: true
+        warning: 80
+        critical: 95
+        tags:
+          - "env:prod"
+          - "critical:true"
+
+# Deployment configuration for production - conservative approach
+deployment_config:
+  batch_size: "10%"
+  max_fail_percentage: 5
+  timeout: 900
+  retry_attempts: 5
+  rollback_enabled: true
+
+# Monitoring configuration for production - enhanced
+monitoring:
+  webhook_enabled: true
+  log_level: WARN
+  health_check_interval: 15
+  health_check_timeout: 300
+  alert_on_failure: true
+
+# Production specific variables
+prod_health_check_url: "http://localhost:8080/health"
+prod_api_timeout: 30

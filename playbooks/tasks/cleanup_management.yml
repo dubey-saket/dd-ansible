@@ -1,0 +1,174 @@
+---
+# Cleanup management for orphaned DataDog checks and bidirectional sync
+- name: Get current DataDog checks from agent (Linux)
+  find:
+    paths: "/etc/datadog-agent/conf.d"
+    patterns: "*.yaml"
+    recurse: true
+  register: current_agent_checks
+  when: ansible_os_family != "Windows"
+
+- name: Get current DataDog checks from agent (Windows)
+  win_find:
+    paths: "C:\\ProgramData\\Datadog\\conf.d"
+    patterns: "*.yaml"
+    recurse: true
+  register: current_agent_checks
+  when: ansible_os_family == "Windows"
+
+- name: Extract check names from agent files
+  set_fact:
+    agent_check_names: "{{ current_agent_checks.files | map(attribute='path') | map('basename') | map('regex_replace', '^(.*)\\.d\\.yaml$', '\\1') | list }}"
+
+- name: Get expected check names from configuration
+  set_fact:
+    expected_check_names: "{{ datadog_checks_merged.keys() | list }}"
+
+- name: Find orphaned checks
+  set_fact:
+    orphaned_checks: "{{ agent_check_names | difference(expected_check_names) }}"
+
+- name: Find missing checks
+  set_fact:
+    missing_checks: "{{ expected_check_names | difference(agent_check_names) }}"
+
+- name: Log check analysis
+  debug:
+    msg:
+      - "DataDog Check Analysis for {{ ansible_hostname }}:"
+      - "Agent checks: {{ agent_check_names }}"
+      - "Expected checks: {{ expected_check_names }}"
+      - "Orphaned checks: {{ orphaned_checks }}"
+      - "Missing checks: {{ missing_checks }}"
+
+- name: Remove orphaned check files (Linux)
+  file:
+    path: "/etc/datadog-agent/conf.d/{{ item }}.d"
+    state: absent
+  loop: "{{ orphaned_checks }}"
+  when: 
+    - orphaned_checks | length > 0
+    - cleanup_orphaned_checks | default(true)
+    - ansible_os_family != "Windows"
+
+- name: Remove orphaned check files (Windows)
+  win_file:
+    path: "C:\\ProgramData\\Datadog\\conf.d\\{{ item }}.d"
+    state: absent
+  loop: "{{ orphaned_checks }}"
+  when: 
+    - orphaned_checks | length > 0
+    - cleanup_orphaned_checks | default(true)
+    - ansible_os_family == "Windows"
+
+- name: Create missing check directories (Linux)
+  file:
+    path: "/etc/datadog-agent/conf.d/{{ item }}.d"
+    state: directory
+    owner: dd-agent
+    group: dd-agent
+    mode: '0755'
+  loop: "{{ missing_checks }}"
+  when: 
+    - missing_checks | length > 0
+    - ansible_os_family != "Windows"
+
+- name: Create missing check directories (Windows)
+  win_file:
+    path: "C:\\ProgramData\\Datadog\\conf.d\\{{ item }}.d"
+    state: directory
+  loop: "{{ missing_checks }}"
+  when: 
+    - missing_checks | length > 0
+    - ansible_os_family == "Windows"
+
+- name: Sync check configurations
+  block:
+    - name: Template check configuration files (Linux)
+      template:
+        src: "{{ item }}.yaml.j2"
+        dest: "/etc/datadog-agent/conf.d/{{ item }}.d/{{ item }}.yaml"
+        owner: dd-agent
+        group: dd-agent
+        mode: '0644'
+      loop: "{{ datadog_checks_merged.keys() }}"
+      when: 
+        - ansible_os_family != "Windows"
+        - datadog_checks_merged[item] is defined
+
+    - name: Template check configuration files (Windows)
+      win_template:
+        src: "{{ item }}.yaml.j2"
+        dest: "C:\\ProgramData\\Datadog\\conf.d\\{{ item }}.d\\{{ item }}.yaml"
+      loop: "{{ datadog_checks_merged.keys() }}"
+      when: 
+        - ansible_os_family == "Windows"
+        - datadog_checks_merged[item] is defined
+
+- name: Validate check configurations (Linux)
+  command: "datadog-agent configcheck"
+  register: config_validation
+  failed_when: false
+  changed_when: false
+  when: ansible_os_family != "Windows"
+
+- name: Validate check configurations (Windows)
+  win_command: "C:\\Program Files\\Datadog\\Datadog Agent\\bin\\agent.exe configcheck"
+  register: config_validation
+  failed_when: false
+  changed_when: false
+  when: ansible_os_family == "Windows"
+
+- name: Log configuration validation results
+  debug:
+    msg: "Configuration validation: {{ 'PASSED' if config_validation.rc == 0 else 'FAILED' }}"
+
+- name: Restart agent if configuration changed
+  block:
+    - name: Restart DataDog agent (Linux)
+      systemd:
+        name: "{{ datadog_config_redhat.service_name | default('datadog-agent') }}"
+        state: restarted
+      when: ansible_os_family != "Windows"
+
+    - name: Restart DataDog agent (Windows)
+      win_service:
+        name: "{{ datadog_config_windows.service_name | default('DatadogAgent') }}"
+        state: restarted
+      when: ansible_os_family == "Windows"
+
+    - name: Wait for agent restart
+      wait_for:
+        timeout: 30
+        delay: 5
+      when: ansible_os_family != "Windows"
+
+    - name: Wait for agent restart (Windows)
+      win_wait_for:
+        timeout: 30
+        delay: 5
+      when: ansible_os_family == "Windows"
+
+- name: Generate cleanup report
+  set_fact:
+    cleanup_report:
+      hostname: "{{ ansible_hostname }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      orphaned_checks_removed: "{{ orphaned_checks }}"
+      missing_checks_created: "{{ missing_checks }}"
+      configuration_valid: "{{ config_validation.rc == 0 }}"
+      agent_restarted: true
+
+- name: Save cleanup report (Linux)
+  copy:
+    content: "{{ cleanup_report | to_nice_json }}"
+    dest: "/var/log/datadog-deployment/cleanup-{{ ansible_hostname }}-{{ ansible_date_time.epoch }}.json"
+    mode: '0644'
+  become: true
+  when: ansible_os_family != "Windows"
+
+- name: Save cleanup report (Windows)
+  win_copy:
+    content: "{{ cleanup_report | to_nice_json }}"
+    dest: "C:\\ProgramData\\Datadog\\cleanup-{{ ansible_hostname }}-{{ ansible_date_time.epoch }}.json"
+  when: ansible_os_family == "Windows"

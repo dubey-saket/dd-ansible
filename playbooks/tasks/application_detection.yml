@@ -1,0 +1,115 @@
+---
+# Application server detection and configuration
+- name: Detect running services (Linux)
+  systemd:
+    name: "{{ item }}"
+  register: detected_services
+  failed_when: false
+  changed_when: false
+  loop:
+    - nginx
+    - apache2
+    - httpd
+    - tomcat
+    - mysql
+    - postgresql
+    - mongodb
+    - redis
+  when: ansible_os_family != "Windows"
+
+- name: Detect running services (Windows)
+  win_service:
+    name: "{{ item }}"
+  register: detected_services
+  failed_when: false
+  changed_when: false
+  loop:
+    - W3SVC
+    - MySQL
+    - PostgreSQL
+    - MongoDB
+    - Redis
+  when: ansible_os_family == "Windows"
+
+- name: Detect Node.js applications
+  find:
+    paths:
+      - /opt
+      - /var/www
+      - /home
+    patterns: "package.json"
+    recurse: true
+    depth: 3
+  register: nodejs_apps
+  failed_when: false
+  when: ansible_os_family != "Windows"
+
+- name: Detect Node.js applications (Windows)
+  win_find:
+    paths:
+      - C:\\inetpub
+      - C:\\Program Files
+    patterns: "package.json"
+    recurse: true
+    depth: 3
+  register: nodejs_apps
+  failed_when: false
+  when: ansible_os_family == "Windows"
+
+- name: Set detected applications
+  set_fact:
+    detected_applications: >-
+      {{
+        detected_applications | default([]) + 
+        (['nginx'] if detected_services.results | selectattr('status.ActiveState', 'equalto', 'active') | selectattr('item', 'in', ['nginx']) | list else []) +
+        (['apache'] if detected_services.results | selectattr('status.ActiveState', 'equalto', 'active') | selectattr('item', 'in', ['apache2', 'httpd']) | list else []) +
+        (['tomcat'] if detected_services.results | selectattr('status.ActiveState', 'equalto', 'active') | selectattr('item', 'equalto', 'tomcat') | list else []) +
+        (['mysql'] if detected_services.results | selectattr('status.ActiveState', 'equalto', 'active') | selectattr('item', 'equalto', 'mysql') | list else []) +
+        (['postgresql'] if detected_services.results | selectattr('status.ActiveState', 'equalto', 'active') | selectattr('item', 'equalto', 'postgresql') | list else []) +
+        (['mongodb'] if detected_services.results | selectattr('status.ActiveState', 'equalto', 'active') | selectattr('item', 'equalto', 'mongodb') | list else []) +
+        (['redis'] if detected_services.results | selectattr('status.ActiveState', 'equalto', 'active') | selectattr('item', 'equalto', 'redis') | list else []) +
+        (['nodejs'] if nodejs_apps.files | length > 0 else [])
+      }}
+
+- name: Set detected applications (Windows)
+  set_fact:
+    detected_applications: >-
+      {{
+        detected_applications | default([]) + 
+        (['iis'] if detected_services.results | selectattr('status.State', 'equalto', 'Running') | selectattr('item', 'equalto', 'W3SVC') | list else []) +
+        (['mysql'] if detected_services.results | selectattr('status.State', 'equalto', 'Running') | selectattr('item', 'equalto', 'MySQL') | list else []) +
+        (['postgresql'] if detected_services.results | selectattr('status.State', 'equalto', 'Running') | selectattr('item', 'equalto', 'PostgreSQL') | list else []) +
+        (['mongodb'] if detected_services.results | selectattr('status.State', 'equalto', 'Running') | selectattr('item', 'equalto', 'MongoDB') | list else []) +
+        (['redis'] if detected_services.results | selectattr('status.State', 'equalto', 'Running') | selectattr('item', 'equalto', 'Redis') | list else [])
+      }}
+  when: ansible_os_family == "Windows"
+
+- name: Generate application-specific checks
+  set_fact:
+    application_checks: >-
+      {{
+        application_checks | default({}) |
+        combine(
+          application_server_defaults[item].checks | default({}),
+          recursive=True
+        )
+      }}
+  loop: "{{ detected_applications | default([]) }}"
+  when: detected_applications is defined
+
+- name: Set ignore fields for detected applications
+  set_fact:
+    application_ignore_fields: >-
+      {{
+        application_ignore_fields | default([]) +
+        (application_server_defaults[item].ignore_fields | default([]))
+      }}
+  loop: "{{ detected_applications | default([]) }}"
+  when: detected_applications is defined
+
+- name: Log detected applications
+  debug:
+    msg:
+      - "Detected applications on {{ ansible_hostname }}: {{ detected_applications | default([]) }}"
+      - "Generated application checks: {{ application_checks | default({}) }}"
+      - "Ignore fields: {{ application_ignore_fields | default([]) }}"

@@ -1,0 +1,60 @@
+---
+# Staging environment group variables
+target_environment: staging
+
+# Environment specific tags
+datadog_env_tags:
+  - "env:staging"
+  - "tier:preproduction"
+
+# Staging specific configuration
+datadog_config_staging:
+  log_level: WARN
+  apm_config:
+    enabled: true
+    apm_non_local_traffic: true
+  logs_enabled: true
+  process_config:
+    enabled: true
+  network_config:
+    enabled: true
+  security_config:
+    enabled: false
+
+# Staging specific checks
+datadog_checks_staging:
+  http_check:
+    init_config:
+    instances:
+      - name: "Staging Health Check"
+        url: "{{ staging_health_check_url | default('http://localhost:8080/health') }}"
+        timeout: 15
+        include_content: true
+        collect_response_time: true
+        tags:
+          - "env:staging"
+          - "service:health-check"
+  disk:
+    init_config:
+    instances:
+      - use_mount: true
+        exclude:
+          - /proc/*
+          - /sys/*
+          - /dev/*
+        warning: 80
+        critical: 90
+        tags:
+          - "env:staging"
+
+# Deployment configuration for staging
+deployment_config:
+  batch_size: "25%"
+  max_fail_percentage: 15
+  timeout: 450
+  retry_attempts: 3
+  rollback_enabled: true
+
+# Staging specific variables
+staging_health_check_url: "http://localhost:8080/health"
+staging_api_timeout: 45

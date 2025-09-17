@@ -1,0 +1,169 @@
+---
+# Application server specific defaults
+application_server_defaults:
+  nginx:
+    checks:
+      nginx:
+        init_config:
+        instances:
+          - nginx_status_url: "http://localhost/nginx_status"
+            tags:
+              - "server:nginx"
+      http_check:
+        init_config:
+        instances:
+          - name: "Nginx Health Check"
+            url: "http://localhost/health"
+            timeout: 10
+            tags:
+              - "server:nginx"
+    ignore_fields:
+      - "apache"
+      - "tomcat"
+      - "iis"
+
+  apache:
+    checks:
+      apache:
+        init_config:
+        instances:
+          - apache_status_url: "http://localhost/server-status"
+            tags:
+              - "server:apache"
+      http_check:
+        init_config:
+        instances:
+          - name: "Apache Health Check"
+            url: "http://localhost/health"
+            timeout: 10
+            tags:
+              - "server:apache"
+    ignore_fields:
+      - "nginx"
+      - "tomcat"
+      - "iis"
+
+  tomcat:
+    checks:
+      tomcat:
+        init_config:
+        instances:
+          - tomcat_home: "/opt/tomcat"
+            tags:
+              - "server:tomcat"
+      http_check:
+        init_config:
+        instances:
+          - name: "Tomcat Health Check"
+            url: "http://localhost:8080/manager/status"
+            timeout: 10
+            tags:
+              - "server:tomcat"
+    ignore_fields:
+      - "nginx"
+      - "apache"
+      - "iis"
+
+  iis:
+    checks:
+      iis:
+        init_config:
+        instances:
+          - sites:
+              - "Default Web Site"
+            tags:
+              - "server:iis"
+      http_check:
+        init_config:
+        instances:
+          - name: "IIS Health Check"
+            url: "http://localhost/health"
+            timeout: 10
+            tags:
+              - "server:iis"
+    ignore_fields:
+      - "nginx"
+      - "apache"
+      - "tomcat"
+
+  nodejs:
+    checks:
+      http_check:
+        init_config:
+        instances:
+          - name: "Node.js Health Check"
+            url: "http://localhost:3000/health"
+            timeout: 10
+            tags:
+              - "server:nodejs"
+      process:
+        init_config:
+        instances:
+          - name: "node"
+            tags:
+              - "server:nodejs"
+    ignore_fields:
+      - "nginx"
+      - "apache"
+      - "tomcat"
+      - "iis"
+
+  postgresql:
+    checks:
+      postgres:
+        init_config:
+        instances:
+          - host: "localhost"
+            port: 5432
+            username: "datadog"
+            password: "{{ vault_postgres_password | default('') }}"
+            tags:
+              - "database:postgresql"
+    ignore_fields:
+      - "mysql"
+      - "mongodb"
+      - "redis"
+
+  mysql:
+    checks:
+      mysql:
+        init_config:
+        instances:
+          - host: "localhost"
+            port: 3306
+            username: "datadog"
+            password: "{{ vault_mysql_password | default('') }}"
+            tags:
+              - "database:mysql"
+    ignore_fields:
+      - "postgres"
+      - "mongodb"
+      - "redis"
+
+  mongodb:
+    checks:
+      mongodb:
+        init_config:
+        instances:
+          - host: "localhost"
+            port: 27017
+            tags:
+              - "database:mongodb"
+    ignore_fields:
+      - "postgres"
+      - "mysql"
+      - "redis"
+
+  redis:
+    checks:
+      redis:
+        init_config:
+        instances:
+          - host: "localhost"
+            port: 6379
+            tags:
+              - "database:redis"
+    ignore_fields:
+      - "postgres"
+      - "mysql"
+      - "mongodb"

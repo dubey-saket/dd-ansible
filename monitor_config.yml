@@ -1,0 +1,37 @@
+---
+# Deployment Monitor Configuration
+
+# Webhook settings
+webhook_enabled: false
+webhook_url: ""
+
+# Monitoring settings
+default_interval: 30  # seconds
+default_duration: 3600  # seconds (1 hour)
+
+# Alert thresholds
+alert_thresholds:
+  failure_rate: 10  # percentage
+  completion_time: 1800  # seconds (30 minutes)
+
+# Log settings
+log_level: INFO
+log_retention_days: 30
+
+# Environment specific settings
+environments:
+  dev:
+    webhook_enabled: false
+    alert_thresholds:
+      failure_rate: 20
+      completion_time: 900
+  staging:
+    webhook_enabled: true
+    alert_thresholds:
+      failure_rate: 15
+      completion_time: 1200
+  prod:
+    webhook_enabled: true
+    alert_thresholds:
+      failure_rate: 5
+      completion_time: 1800

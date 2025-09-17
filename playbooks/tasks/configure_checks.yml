@@ -1,0 +1,56 @@
+---
+# Custom checks configuration tasks
+- name: Create custom checks directory
+  file:
+    path: "/etc/datadog-agent/checks.d"
+    state: directory
+    owner: dd-agent
+    group: dd-agent
+    mode: '0755'
+
+- name: Create custom check configurations directory
+  file:
+    path: "/etc/datadog-agent/conf.d"
+    state: directory
+    owner: dd-agent
+    group: dd-agent
+    mode: '0755'
+
+- name: Configure HTTP check template
+  template:
+    src: "http_check.yaml.j2"
+    dest: "/etc/datadog-agent/conf.d/http_check.d/http_check.yaml"
+    owner: dd-agent
+    group: dd-agent
+    mode: '0644'
+  when: datadog_checks_merged.http_check is defined
+
+- name: Configure disk check template
+  template:
+    src: "disk_check.yaml.j2"
+    dest: "/etc/datadog-agent/conf.d/disk.d/disk.yaml"
+    owner: dd-agent
+    group: dd-agent
+    mode: '0644'
+  when: datadog_checks_merged.disk is defined
+
+- name: Configure system check template
+  template:
+    src: "system_check.yaml.j2"
+    dest: "/etc/datadog-agent/conf.d/system.d/system.yaml"
+    owner: dd-agent
+    group: dd-agent
+    mode: '0644'
+  when: datadog_checks_merged.system is defined
+
+- name: Restart agent to load new checks
+  systemd:
+    name: datadog-agent
+    state: restarted
+  when: ansible_check_mode == false
+
+- name: Wait for agent restart
+  wait_for:
+    timeout: 30
+    delay: 5
+  when: ansible_check_mode == false

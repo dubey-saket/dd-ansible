@@ -1,0 +1,37 @@
+---
+# SUSE/SLES specific configuration
+datadog_config_suse:
+  # SUSE specific paths
+  conf_path: "/etc/datadog-agent"
+  log_path: "/var/log/datadog-agent"
+  run_path: "/opt/datadog-agent/run"
+  
+  # Service management
+  service_name: "datadog-agent"
+  service_user: "dd-agent"
+  service_group: "dd-agent"
+
+# SUSE specific checks
+datadog_checks_suse:
+  systemd:
+    init_config:
+    instances:
+      - unit_names:
+          - datadog-agent.service
+        pattern: "datadog-agent"
+  zypper:
+    init_config:
+    instances:
+      - collect_installed_packages: true
+        collect_installed_packages_interval: 3600
+
+# Package management
+package_manager: "zypper"
+datadog_repo_url: "https://yum.datadoghq.com/suse/stable/7/x86_64/"
+
+# Firewall rules (if needed)
+firewall_rules:
+  - port: 8126
+    protocol: tcp
+    state: present
+    comment: "DataDog APM"
