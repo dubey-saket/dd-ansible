@@ -1,0 +1,58 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and fill in your actual values
+
+# Datadog API Configuration (REQUIRED)
+datadog_api_key = "your-datadog-api-key-here"
+datadog_app_key = "your-datadog-app-key-here"
+datadog_api_url = "https://api.datadoghq.com"  # or https://api.datadoghq.eu for EU
+
+# Environment Configuration
+environment = "production"  # or staging, development
+
+# AWS Configuration
+aws_region    = "us-east-1"
+aws_account_id = "123456789012"
+
+# On-Premises Configuration
+onprem_datacenter = "primary-datacenter"
+
+# Notification Configuration
+notification_channels = {
+  email = [
+    "admin@company.com",
+    "ops-team@company.com"
+  ]
+  slack = "#alerts"  # Slack channel for alerts (optional)
+  pagerduty = "your-pagerduty-service-key"  # Optional
+  webhook = "https://your-webhook-url.com/alerts"  # Optional
+  teams = "#alerts"  # Teams channel for alerts (optional)
+  teams_power_automation = "https://your-power-automation-url.com/alerts"  # Optional
+}
+
+# Dashboard Configuration
+dashboard_refresh_interval = 30
+dashboard_timeframe = "1h"
+
+# Alert Configuration
+alert_evaluation_delay = 300
+alert_new_host_delay = 300
+alert_new_group_delay = 300
+
+# Threshold Configuration
+cpu_threshold_warning = 70
+cpu_threshold_critical = 85
+memory_threshold_warning = 80
+memory_threshold_critical = 90
+disk_threshold_warning = 80
+disk_threshold_critical = 90
+
+# Application Configuration
+application_names = ["web-app", "api-service", "database", "cache-service"]
+service_names = ["nginx", "apache", "mysql", "redis", "postgresql"]
+
+# Custom Tags
+custom_tags = ["team:platform", "cost-center:engineering"]
+
+# Monitoring Scope
+monitor_aws_services = ["ec2", "rds", "elb", "s3", "cloudfront", "lambda", "ecs", "eks"]
+monitor_onprem_services = ["system", "network", "database", "application", "storage"]
