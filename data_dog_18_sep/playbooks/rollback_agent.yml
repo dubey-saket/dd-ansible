@@ -1,0 +1,135 @@
+---
+- name: Rollback DataDog Agent to previous version
+  hosts: all
+  gather_facts: true
+  become: true
+  vars_files:
+    - ../vars/versions.yml
+    - ../vault/vault.yml
+
+  pre_tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - datadog_agent_version is defined
+          - datadog_agent_version | length > 0
+        fail_msg: "datadog_agent_version is required for rollback"
+
+    - name: Check current agent version
+      shell: "sudo datadog-agent version 2>/dev/null || echo 'Agent not installed'"
+      register: current_version
+      changed_when: false
+
+    - name: Display current version
+      debug:
+        msg: "Current DataDog agent version: {{ current_version.stdout }}"
+
+    - name: Check if rollback is needed
+      set_fact:
+        rollback_needed: "{{ current_version.stdout != datadog_agent_version }}"
+      when: current_version.stdout != "Agent not installed"
+
+  tasks:
+    - name: Stop DataDog agent service
+      systemd:
+        name: datadog-agent
+        state: stopped
+        enabled: no
+      when: rollback_needed | default(true)
+
+    - name: Remove current DataDog agent package
+      package:
+        name: datadog-agent
+        state: absent
+      when: rollback_needed | default(true)
+      ignore_errors: true
+
+    - name: Clean up agent files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /opt/datadog-agent
+        - /etc/datadog-agent
+        - /var/log/datadog
+      when: rollback_needed | default(true)
+      ignore_errors: true
+
+    - name: Install DataDog agent at specified version
+      block:
+        - name: Add DataDog repository
+          apt_repository:
+            repo: "deb https://apt.datadoghq.com/ stable 7"
+            state: present
+            update_cache: yes
+          when: ansible_os_family == "Debian"
+
+        - name: Add DataDog repository (RHEL/CentOS)
+          yum_repository:
+            name: datadog
+            description: DataDog Agent Repository
+            baseurl: https://yum.datadoghq.com/stable/7/x86_64/
+            gpgcheck: yes
+            gpgkey: https://keys.datadoghq.com/DATADOG_RPM_KEY.public
+            enabled: yes
+          when: ansible_os_family == "RedHat"
+
+        - name: Install DataDog agent at specific version
+          package:
+            name: "datadog-agent={{ datadog_agent_version }}-1"
+            state: present
+          when: ansible_os_family == "Debian"
+
+        - name: Install DataDog agent at specific version (RHEL/CentOS)
+          package:
+            name: "datadog-agent-{{ datadog_agent_version }}-1.x86_64"
+            state: present
+          when: ansible_os_family == "RedHat"
+
+        - name: Configure DataDog agent
+          template:
+            src: ../templates/datadog.yaml.j2
+            dest: /etc/datadog-agent/datadog.yaml
+            owner: dd-agent
+            group: dd-agent
+            mode: '0644'
+          notify: restart datadog-agent
+
+        - name: Start DataDog agent service
+          systemd:
+            name: datadog-agent
+            state: started
+            enabled: yes
+
+      when: rollback_needed | default(true)
+
+    - name: Verify rollback version
+      shell: "sudo datadog-agent version"
+      register: rollback_version
+      changed_when: false
+
+    - name: Display rollback version
+      debug:
+        msg: "DataDog agent version after rollback: {{ rollback_version.stdout }}"
+
+  handlers:
+    - name: restart datadog-agent
+      systemd:
+        name: datadog-agent
+        state: restarted
+
+  post_tasks:
+    - name: Verify agent is running
+      systemd:
+        name: datadog-agent
+        state: started
+      register: agent_status
+
+    - name: Check agent status
+      debug:
+        msg: "DataDog agent status: {{ agent_status.status.ActiveState }}"
+
+    - name: Report rollback success
+      debug:
+        msg: "DataDog agent successfully rolled back to version {{ datadog_agent_version }} on {{ inventory_hostname }}"
+      when: agent_status.status.ActiveState == "active"

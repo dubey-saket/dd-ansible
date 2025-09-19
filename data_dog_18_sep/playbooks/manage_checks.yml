@@ -1,0 +1,197 @@
+---
+- name: Manage DataDog Checks State
+  hosts: all
+  gather_facts: true
+  become: true
+  vars_files:
+    - ../vars/versions.yml
+    - ../vault/vault.yml
+
+  vars:
+    # Desired state of checks (defined in inventory/group_vars/host_vars)
+    desired_checks: "{{ group_datadog_checks | default({}) | combine(host_datadog_checks | default({}), recursive=True) }}"
+    
+    # State management variables
+    check_state_file: "/tmp/datadog_checks_state_{{ inventory_hostname }}.json"
+    remove_orphaned_checks: true
+    verify_removal: true
+
+  pre_tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - datadog_api_key | default('') | length > 0
+        fail_msg: "datadog_api_key is required for check management"
+
+    - name: Set unified Datadog variables
+      set_fact:
+        datadog_api_key: "{{ datadog_api_key }}"
+        datadog_site: "{{ datadog_site | default('datadoghq.com') }}"
+
+    - name: Display desired checks
+      debug:
+        msg: "Desired checks for {{ inventory_hostname }}: {{ desired_checks.keys() | list }}"
+
+  tasks:
+    - name: Get current checks from DataDog API
+      uri:
+        url: "https://api.{{ datadog_site }}/api/v1/check"
+        method: GET
+        headers:
+          Content-Type: "application/json"
+          DD-API-KEY: "{{ datadog_api_key }}"
+        return_content: yes
+      register: current_checks_response
+      delegate_to: localhost
+      run_once: true
+
+    - name: Parse current checks
+      set_fact:
+        current_checks: "{{ current_checks_response.json }}"
+      when: current_checks_response.status == 200
+
+    - name: Display current checks
+      debug:
+        msg: "Current checks in DataDog: {{ current_checks.keys() | list }}"
+      when: current_checks is defined
+
+    - name: Identify checks to add
+      set_fact:
+        checks_to_add: "{{ desired_checks.keys() | difference(current_checks.keys() | default([])) }}"
+      when: current_checks is defined
+
+    - name: Identify checks to remove
+      set_fact:
+        checks_to_remove: "{{ current_checks.keys() | difference(desired_checks.keys()) }}"
+      when: current_checks is defined and remove_orphaned_checks | default(false)
+
+    - name: Display checks to add
+      debug:
+        msg: "Checks to add: {{ checks_to_add }}"
+      when: checks_to_add is defined
+
+    - name: Display checks to remove
+      debug:
+        msg: "Checks to remove: {{ checks_to_remove }}"
+      when: checks_to_remove is defined
+
+    - name: Add new checks
+      block:
+        - name: Add check {{ item }}
+          uri:
+            url: "https://api.{{ datadog_site }}/api/v1/check"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+              DD-API-KEY: "{{ datadog_api_key }}"
+            body_format: json
+            body:
+              name: "{{ item }}"
+              config: "{{ desired_checks[item] }}"
+              tags: "{{ datadog_global_tags | default([]) + datadog_env_tags | default([]) + datadog_app_tags | default([]) + datadog_role_tags | default([]) + datadog_host_tags | default([]) }}"
+          delegate_to: localhost
+          register: add_check_result
+          failed_when: add_check_result.status not in [200, 201]
+
+        - name: Verify check {{ item }} was added
+          uri:
+            url: "https://api.{{ datadog_site }}/api/v1/check/{{ item }}"
+            method: GET
+            headers:
+              Content-Type: "application/json"
+              DD-API-KEY: "{{ datadog_api_key }}"
+            return_content: yes
+          delegate_to: localhost
+          register: verify_add_result
+          retries: 3
+          delay: 5
+          until: verify_add_result.status == 200
+
+      loop: "{{ checks_to_add | default([]) }}"
+      when: checks_to_add is defined and checks_to_add | length > 0
+
+    - name: Remove orphaned checks
+      block:
+        - name: Remove check {{ item }}
+          uri:
+            url: "https://api.{{ datadog_site }}/api/v1/check/{{ item }}"
+            method: DELETE
+            headers:
+              Content-Type: "application/json"
+              DD-API-KEY: "{{ datadog_api_key }}"
+          delegate_to: localhost
+          register: remove_check_result
+          failed_when: remove_check_result.status not in [200, 204, 404]
+
+        - name: Verify check {{ item }} was removed
+          uri:
+            url: "https://api.{{ datadog_site }}/api/v1/check/{{ item }}"
+            method: GET
+            headers:
+              Content-Type: "application/json"
+              DD-API-KEY: "{{ datadog_api_key }}"
+            return_content: yes
+          delegate_to: localhost
+          register: verify_remove_result
+          retries: 3
+          delay: 5
+          until: verify_remove_result.status == 404
+          when: verify_removal | default(true)
+
+      loop: "{{ checks_to_remove | default([]) }}"
+      when: checks_to_remove is defined and checks_to_remove | length > 0
+
+    - name: Update existing checks
+      block:
+        - name: Update check {{ item }}
+          uri:
+            url: "https://api.{{ datadog_site }}/api/v1/check/{{ item }}"
+            method: PUT
+            headers:
+              Content-Type: "application/json"
+              DD-API-KEY: "{{ datadog_api_key }}"
+            body_format: json
+            body:
+              config: "{{ desired_checks[item] }}"
+              tags: "{{ datadog_global_tags | default([]) + datadog_env_tags | default([]) + datadog_app_tags | default([]) + datadog_role_tags | default([]) + datadog_host_tags | default([]) }}"
+          delegate_to: localhost
+          register: update_check_result
+          failed_when: update_check_result.status not in [200, 201]
+
+      loop: "{{ desired_checks.keys() | intersect(current_checks.keys() | default([])) }}"
+      when: current_checks is defined
+
+    - name: Save check state
+      copy:
+        content: "{{ desired_checks | to_nice_json }}"
+        dest: "{{ check_state_file }}"
+        mode: '0644'
+      delegate_to: localhost
+
+  post_tasks:
+    - name: Get final check state
+      uri:
+        url: "https://api.{{ datadog_site }}/api/v1/check"
+        method: GET
+        headers:
+          Content-Type: "application/json"
+          DD-API-KEY: "{{ datadog_api_key }}"
+        return_content: yes
+      register: final_checks_response
+      delegate_to: localhost
+      run_once: true
+
+    - name: Display final check state
+      debug:
+        msg: "Final checks in DataDog: {{ final_checks_response.json.keys() | list }}"
+      when: final_checks_response.status == 200
+
+    - name: Report check management success
+      debug:
+        msg: "DataDog checks successfully managed for {{ inventory_hostname }}"
+      when: final_checks_response.status == 200
+
+    - name: Report check management failure
+      debug:
+        msg: "DataDog check management failed for {{ inventory_hostname }}"
+      when: final_checks_response.status != 200

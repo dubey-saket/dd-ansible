@@ -1,0 +1,122 @@
+---
+- name: Uninstall DataDog Agent
+  hosts: all
+  gather_facts: true
+  become: true
+  vars_files:
+    - ../vault/vault.yml
+
+  vars:
+    remove_config: false
+    remove_logs: false
+
+  pre_tasks:
+    - name: Check if DataDog agent is installed
+      shell: "sudo systemctl is-active datadog-agent 2>/dev/null || echo 'not_running'"
+      register: agent_status
+      changed_when: false
+
+    - name: Display current agent status
+      debug:
+        msg: "DataDog agent status: {{ agent_status.stdout }}"
+
+  tasks:
+    - name: Stop DataDog agent service
+      systemd:
+        name: datadog-agent
+        state: stopped
+        enabled: no
+      when: agent_status.stdout != "not_running"
+
+    - name: Remove DataDog agent package
+      package:
+        name: datadog-agent
+        state: absent
+      ignore_errors: true
+
+    - name: Remove DataDog agent files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /opt/datadog-agent
+        - /etc/datadog-agent
+        - /var/log/datadog
+      when: remove_config | default(false)
+      ignore_errors: true
+
+    - name: Remove DataDog agent logs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/log/datadog
+        - /var/log/datadog-agent
+      when: remove_logs | default(false)
+      ignore_errors: true
+
+    - name: Remove DataDog agent user
+      user:
+        name: dd-agent
+        state: absent
+        remove: yes
+      when: remove_config | default(false)
+      ignore_errors: true
+
+    - name: Remove DataDog agent group
+      group:
+        name: dd-agent
+        state: absent
+      when: remove_config | default(false)
+      ignore_errors: true
+
+    - name: Remove DataDog repository
+      apt_repository:
+        repo: "deb https://apt.datadoghq.com/ stable 7"
+        state: absent
+      when: ansible_os_family == "Debian"
+      ignore_errors: true
+
+    - name: Remove DataDog repository (RHEL/CentOS)
+      yum_repository:
+        name: datadog
+        state: absent
+      when: ansible_os_family == "RedHat"
+      ignore_errors: true
+
+    - name: Clean up package cache
+      apt:
+        autoclean: yes
+        autoremove: yes
+      when: ansible_os_family == "Debian"
+      ignore_errors: true
+
+    - name: Clean up package cache (RHEL/CentOS)
+      yum:
+        clean: all
+      when: ansible_os_family == "RedHat"
+      ignore_errors: true
+
+  post_tasks:
+    - name: Verify agent is not running
+      shell: "sudo systemctl is-active datadog-agent 2>/dev/null || echo 'not_running'"
+      register: final_status
+      changed_when: false
+
+    - name: Check for remaining agent files
+      shell: "ls -la /opt/datadog-agent/ 2>/dev/null || echo 'not_found'"
+      register: remaining_files
+      changed_when: false
+
+    - name: Display uninstall status
+      debug:
+        msg: "DataDog agent uninstall status: {{ final_status.stdout }}"
+
+    - name: Display remaining files
+      debug:
+        msg: "Remaining agent files: {{ remaining_files.stdout }}"
+
+    - name: Report uninstall success
+      debug:
+        msg: "DataDog agent successfully uninstalled from {{ inventory_hostname }}"
+      when: final_status.stdout == "not_running"
