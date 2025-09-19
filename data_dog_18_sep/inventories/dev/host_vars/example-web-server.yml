@@ -1,0 +1,55 @@
+---
+# Example host-specific configuration for a web server
+# This file would be named after the actual hostname, e.g., web01.example.com.yml
+
+# Host-specific tags
+datadog_host_tags:
+  - "hostname:web01"
+  - "instance_id:i-1234567890abcdef0"
+  - "availability_zone:us-east-1a"
+
+# Host-specific application tags
+datadog_app_tags:
+  - "app:webapp"
+  - "app:frontend"
+  - "version:2.1.0"
+
+# Host-specific role tags
+datadog_role_tags:
+  - "role:web"
+  - "service:nginx"
+  - "component:frontend"
+
+# Host-specific checks (overrides group checks)
+host_datadog_checks:
+  nginx:
+    init_config:
+    instances:
+      - nginx_status_url: http://localhost/nginx_status
+        tags:
+          - "service:nginx"
+          - "role:web"
+          - "hostname:web01"
+  disk:
+    init_config:
+    instances:
+      - use_mount: true
+        tags:
+          - "service:disk"
+          - "hostname:web01"
+
+# Host-specific agent configuration
+datadog_agent_config:
+  # This host has specific logging requirements
+  logs_enabled: true
+  log_level: DEBUG
+  # Custom log collection
+  logs:
+    - type: file
+      path: /var/log/nginx/access.log
+      service: nginx
+      source: nginx
+      tags:
+        - "env:dev"
+        - "service:nginx"
+        - "hostname:web01"

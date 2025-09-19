@@ -1,0 +1,65 @@
+---
+# Example host-specific configuration for a database server
+# This file would be named after the actual hostname, e.g., db01.example.com.yml
+
+# Host-specific tags
+datadog_host_tags:
+  - "hostname:db01"
+  - "instance_id:i-0987654321fedcba0"
+  - "availability_zone:us-east-1b"
+
+# Host-specific application tags
+datadog_app_tags:
+  - "app:database"
+  - "app:postgresql"
+  - "version:13.4"
+
+# Host-specific role tags
+datadog_role_tags:
+  - "role:database"
+  - "service:postgresql"
+  - "component:backend"
+
+# Host-specific checks (overrides group checks)
+host_datadog_checks:
+  postgres:
+    init_config:
+    instances:
+      - host: localhost
+        port: 5432
+        username: datadog
+        password: "{{ vault_postgres_password | default('changeme') }}"
+        tags:
+          - "service:postgresql"
+          - "role:database"
+          - "hostname:db01"
+  disk:
+    init_config:
+    instances:
+      - use_mount: true
+        tags:
+          - "service:disk"
+          - "hostname:db01"
+  # Database-specific custom metrics
+  custom_metrics:
+    - name: postgres.connections.active
+      type: gauge
+      tags:
+        - "service:postgresql"
+        - "hostname:db01"
+
+# Host-specific agent configuration
+datadog_agent_config:
+  # Database servers need specific logging
+  logs_enabled: true
+  log_level: INFO
+  # Custom log collection for database logs
+  logs:
+    - type: file
+      path: /var/log/postgresql/postgresql-13-main.log
+      service: postgresql
+      source: postgresql
+      tags:
+        - "env:dev"
+        - "service:postgresql"
+        - "hostname:db01"

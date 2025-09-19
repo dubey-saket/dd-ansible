@@ -1,0 +1,43 @@
+---
+# Global DataDog tags applied to all hosts in this inventory
+datadog_global_tags:
+  - "managed_by:ansible"
+  - "company:mycompany.com"
+  - "datacenter:us-east-1"
+
+# Environment specific tags - override this per inventory folder
+datadog_env_tags:
+  - "env:staging"
+  - "tier:pre-production"
+
+# Application tags (override per group or host)
+datadog_app_tags: []
+
+# Role tags (override per group or host)
+datadog_role_tags: []
+
+# DataDog API key - best stored in ansible-vault or env var
+datadog_api_key: "{{ datadog_api_key }}"
+
+# DataDog site (default US)
+datadog_site: "datadoghq.com"
+
+# Base DataDog configuration with combined tags (will be overridden in playbook)
+datadog_config:
+  log_level: INFO
+  apm_config:
+    enabled: true
+  logs_enabled: true
+  tags: "{{ datadog_global_tags + datadog_env_tags + datadog_app_tags + datadog_role_tags + (datadog_host_tags | default([])) }}"
+
+# Environment-specific agent configuration
+datadog_agent_config:
+  # Staging environment specific settings
+  process_config:
+    enabled: true
+  network_config:
+    enabled: true
+  # Standard logging for staging
+  log_level: INFO
+
+

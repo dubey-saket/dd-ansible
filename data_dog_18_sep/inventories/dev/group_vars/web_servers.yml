@@ -1,0 +1,35 @@
+---
+# Web servers group configuration
+datadog_role_tags:
+  - "role:web"
+  - "service:nginx"
+  - "component:frontend"
+
+datadog_app_tags:
+  - "app:webapp"
+  - "app:frontend"
+
+# Web server specific checks
+group_datadog_checks:
+  nginx:
+    init_config:
+    instances:
+      - nginx_status_url: http://localhost/nginx_status
+        tags:
+          - "service:nginx"
+          - "role:web"
+  apache:
+    init_config:
+    instances:
+      - apache_status_url: http://localhost/server-status
+        tags:
+          - "service:apache"
+          - "role:web"
+
+# Web server specific agent configuration
+datadog_agent_config:
+  logs_enabled: true
+  process_config:
+    enabled: true
+  network_config:
+    enabled: true

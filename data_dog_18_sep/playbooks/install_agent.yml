@@ -1,0 +1,60 @@
+---
+- name: Install Datadog Agent on servers
+  hosts: all
+  gather_facts: true
+  become: true
+  vars_files:
+    - ../vars/versions.yml
+    - ../vault/vault.yml
+
+  pre_tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - datadog_api_key | default('') | length > 0
+        fail_msg: "datadog_api_key is required. Set datadog_api_key in vault/vault.yml or provide via inventory/extra_vars."
+
+    - name: Set unified Datadog variables
+      set_fact:
+        datadog_api_key: "{{ datadog_api_key }}"
+        datadog_config_merged:
+          log_level: "{{ (datadog_config.log_level | default('INFO')) | upper }}"
+          apm_config:
+            enabled: "{{ datadog_config.apm_config.enabled | default(true) }}"
+          logs_enabled: "{{ datadog_config.logs_enabled | default(true) }}"
+          tags: "{{ (datadog_global_tags | default([])) + (datadog_env_tags | default([])) + (datadog_app_tags | default([])) + (datadog_role_tags | default([])) + (datadog_host_tags | default([])) }}"
+      when: datadog_config_merged is not defined
+
+  tasks:
+    - block:
+        - name: Install and configure Datadog Agent (official role)
+          import_role:
+            name: datadog.dd.agent
+          vars:
+            datadog_api_key: "{{ datadog_api_key }}"
+            datadog_site: "{{ datadog_site | default('datadoghq.com') }}"
+            datadog_config: "{{ datadog_config_merged }}"
+            datadog_checks: >-
+              {{
+                group_datadog_checks | default({}) |
+                combine(host_datadog_checks | default({}), recursive=True)
+              }}
+            datadog_agent_version: "{{ datadog_agent_version }}"
+            datadog_agent_major_version: "{{ datadog_agent_major_version }}"
+          when: not (skip_datadog_install | default(false))
+
+      rescue:
+        - name: Report Datadog installation failure
+          debug:
+            msg: "Datadog Agent installation failed on {{ inventory_hostname }}. Check logs at logs/ansible.log."
+
+        - name: Fail play for this host
+          fail:
+            msg: "Datadog install failed on {{ inventory_hostname }}"
+
+  post_tasks:
+    - name: Show Datadog Agent version configured
+      debug:
+        msg: "Configured Datadog Agent {{ datadog_agent_major_version }} ({{ datadog_agent_version }}) on {{ inventory_hostname }}"
+
+

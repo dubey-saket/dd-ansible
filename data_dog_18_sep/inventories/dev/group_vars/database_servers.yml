@@ -1,0 +1,47 @@
+---
+# Database servers group configuration
+datadog_role_tags:
+  - "role:database"
+  - "service:postgresql"
+  - "component:backend"
+
+datadog_app_tags:
+  - "app:database"
+  - "app:backend"
+
+# Database server specific checks
+group_datadog_checks:
+  postgres:
+    init_config:
+    instances:
+      - host: localhost
+        port: 5432
+        username: datadog
+        password: "{{ vault_postgres_password | default('changeme') }}"
+        tags:
+          - "service:postgresql"
+          - "role:database"
+  mysql:
+    init_config:
+    instances:
+      - host: localhost
+        port: 3306
+        user: datadog
+        pass: "{{ vault_mysql_password | default('changeme') }}"
+        tags:
+          - "service:mysql"
+          - "role:database"
+
+# Database server specific agent configuration
+datadog_agent_config:
+  logs_enabled: true
+  process_config:
+    enabled: true
+  network_config:
+    enabled: true
+  # Database servers need more detailed process monitoring
+  process_config:
+    enabled: true
+    blacklist_patterns:
+      - "process:postgres"
+      - "process:mysql"

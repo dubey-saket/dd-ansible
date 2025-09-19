@@ -1,0 +1,40 @@
+---
+# Application servers group configuration
+datadog_role_tags:
+  - "role:app"
+  - "service:java"
+  - "component:backend"
+
+datadog_app_tags:
+  - "app:backend"
+  - "app:api"
+
+# Application server specific checks
+group_datadog_checks:
+  jmx:
+    init_config:
+    instances:
+      - host: localhost
+        port: 9999
+        tags:
+          - "service:java"
+          - "role:app"
+  tomcat:
+    init_config:
+    instances:
+      - host: localhost
+        port: 8080
+        tags:
+          - "service:tomcat"
+          - "role:app"
+
+# Application server specific agent configuration
+datadog_agent_config:
+  logs_enabled: true
+  process_config:
+    enabled: true
+  network_config:
+    enabled: true
+  # Enable APM for application servers
+  apm_config:
+    enabled: true
